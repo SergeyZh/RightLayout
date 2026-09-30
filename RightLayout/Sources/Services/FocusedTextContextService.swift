@@ -54,12 +54,40 @@ package enum SessionSyncResult: @unchecked Sendable {
 package final class FocusedTextContextService {
     package static let shared = FocusedTextContextService()
 
-    private var revisionCounter: UInt64 = 0
+    /// Upper bound for a single AX round trip. The default (~6s) lets a busy or hung
+    /// target app freeze our main thread, and with it keyboard event delivery.
+    private static let axMessagingTimeout: Float = 0.3
 
-    package init() {}
+    /// Capabilities of a text element don't change while it stays focused, but probing
+    /// them costs ~8 AX round trips. Cache them per focused element for a short time.
+    private static let capabilitiesCacheLifetime: TimeInterval = 2.0
+
+    private let systemWideElement = AXUIElementCreateSystemWide()
+    private var revisionCounter: UInt64 = 0
+    private var cachedFocusedCapabilities: FocusedElementCapabilities?
+    private var cachedFocusedCapabilitiesAt: Date = .distantPast
+
+    package init() {
+        AXUIElementSetMessagingTimeout(systemWideElement, Self.axMessagingTimeout)
+    }
+
+    /// Drops cached element capabilities (focus or frontmost app changed).
+    package func invalidateCachedCapabilities() {
+        cachedFocusedCapabilities = nil
+    }
 
     package func resolveFocusedElementCapabilities() -> FocusedElementCapabilities? {
-        guard let element = focusedElement() else { return nil }
+        guard let element = focusedElement() else {
+            cachedFocusedCapabilities = nil
+            return nil
+        }
+
+        let now = Date()
+        if let cached = cachedFocusedCapabilities,
+           now.timeIntervalSince(cachedFocusedCapabilitiesAt) < Self.capabilitiesCacheLifetime,
+           CFEqual(cached.element, element) {
+            return cached
+        }
 
         var pid: pid_t = 0
         AXUIElementGetPid(element, &pid)
@@ -67,12 +95,15 @@ package final class FocusedTextContextService {
         let bundleId = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
         let capabilities = buildCapabilities(on: element, pid: pid)
 
-        return FocusedElementCapabilities(
+        let resolved = FocusedElementCapabilities(
             element: element,
             bundleId: bundleId,
             pid: pid,
             capabilities: capabilities
         )
+        cachedFocusedCapabilities = resolved
+        cachedFocusedCapabilitiesAt = now
+        return resolved
     }
 
     package func snapshotFocusedText() -> FocusedTextSnapshot? {
@@ -181,6 +212,55 @@ package final class FocusedTextContextService {
         return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
     }
 
+    /// Verifies a committed boundary (`token` + `separator`) followed by
+    /// `trailingCharacterCount` characters the user has typed since.
+    ///
+    /// The trailing characters are not compared literally: while a layout switch is
+    /// in flight they may show up in either layout. The verified text contains them
+    /// exactly as they appear in the document.
+    package func verifyCommittedBoundary(
+        token: String,
+        separator: String,
+        trailingCharacterCount: Int,
+        revision: UInt64
+    ) -> SessionSyncResult {
+        guard trailingCharacterCount > 0 else {
+            return verifyCommittedBoundary(token: token, separator: separator, revision: revision)
+        }
+        guard !token.isEmpty else { return .unavailable }
+        guard let snapshot = snapshotFocusedText() else { return .unavailable }
+        guard snapshot.selectedRange.length == 0 else {
+            return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
+        }
+
+        let beforeCaret = prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location)
+        var trailingStart = beforeCaret.endIndex
+        for _ in 0..<trailingCharacterCount {
+            guard trailingStart > beforeCaret.startIndex else {
+                return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
+            }
+            trailingStart = beforeCaret.index(before: trailingStart)
+        }
+
+        let committedText = token + separator
+        let trailingText = beforeCaret[trailingStart...]
+        guard beforeCaret[..<trailingStart].hasSuffix(committedText),
+              !trailingText.contains(where: { $0.isWhitespace || $0.isNewline }) else {
+            return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
+        }
+
+        let verifiedText = committedText + String(trailingText)
+        let location = beforeCaret.utf16.count - verifiedText.utf16.count
+        let range = NSRange(location: location, length: verifiedText.utf16.count)
+        return .verified(
+            VerifiedEditContext(
+                snapshot: snapshot,
+                verifiedRange: range,
+                verifiedText: verifiedText
+            )
+        )
+    }
+
     package func verifyExpectedSuffix(_ expectedText: String, revision: UInt64) -> SessionSyncResult {
         guard !expectedText.isEmpty else { return .unavailable }
         guard let snapshot = snapshotFocusedText() else { return .unavailable }
@@ -223,9 +303,8 @@ package final class FocusedTextContextService {
     }
 
     private func focusedElement() -> AXUIElement? {
-        let systemWide = AXUIElementCreateSystemWide()
         var focused: AnyObject?
-        let err = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focused)
+        let err = AXUIElementCopyAttributeValue(systemWideElement, kAXFocusedUIElementAttribute as CFString, &focused)
         guard err == .success else { return nil }
         return focused as! AXUIElement?
     }

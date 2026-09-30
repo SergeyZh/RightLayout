@@ -48,8 +48,18 @@ final class InputSourceManager {
         "com.apple.keylayout.USInternational-PC": "usinternational_pc",
     ]
     
+    /// Input sources resolved by our internal layout ID. Enumerating all input sources
+    /// is comparatively slow, and the switch happens on the typing hot path.
+    private var variantSourceCache: [String: TISInputSource] = [:]
+
     private init() {
         logger.info("InputSourceManager initialized")
+    }
+
+    /// Maps a macOS input source ID (e.g. "com.apple.keylayout.Russian") to our internal layout ID.
+    func layoutVariantId(forInputSourceId inputSourceId: String?) -> String? {
+        guard let inputSourceId else { return nil }
+        return macOSToLayoutID[inputSourceId]
     }
 
     /// Switches to an input source that matches our internal layout ID (as used in `layouts.json`),
@@ -58,6 +68,13 @@ final class InputSourceManager {
     /// Returns `true` if a matching enabled layout was found and selected.
     @discardableResult
     func switchToLayoutVariant(_ layoutId: String) -> Bool {
+        if let cached = variantSourceCache[layoutId] {
+            if TISSelectInputSource(cached) == noErr {
+                return true
+            }
+            variantSourceCache[layoutId] = nil
+        }
+
         let filter: [CFString: Any] = [
             kTISPropertyInputSourceType: kTISTypeKeyboardLayout as Any
         ]
@@ -79,6 +96,7 @@ final class InputSourceManager {
 
             let status = TISSelectInputSource(source)
             if status == noErr {
+                variantSourceCache[layoutId] = source
                 logger.info("✅ Switched input source to layout variant: \(layoutId, privacy: .public)")
                 return true
             } else {
