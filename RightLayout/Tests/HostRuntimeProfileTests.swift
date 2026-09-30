@@ -99,4 +99,23 @@ final class HostRuntimeProfileTests: XCTestCase {
 
         XCTAssertEqual(profile, .blindKnownGood)
     }
+
+    func testTerminalWithReadableBufferResolvesToBlindKnownGood() {
+        let profile = HostRuntimeProfile.resolve(
+            bundleId: "com.googlecode.iterm2",
+            capabilities: AppEditCapabilities(
+                supportsSelectedTextWrite: false,
+                supportsSelectedRangeWrite: false,
+                supportsValueWrite: false,
+                supportsSelectionRead: true,
+                supportsFullTextRead: true,
+                isSecureOrReadBlind: false,
+                capabilityClass: .axFull,
+                elementFingerprint: nil
+            )
+        )
+
+        XCTAssertEqual(profile, .blindKnownGood)
+        XCTAssertTrue(profile.allowsAutomaticBlindReplay)
+    }
 }

@@ -28,6 +28,13 @@ package enum HostRuntimeProfile: String, Codable, Sendable {
             return .axFull
         }
 
+        // Terminals expose their whole screen buffer over AX rather than an editable
+        // field: nothing can be written through it and the caret doesn't map onto it.
+        // Their line editors handle retyped keystrokes reliably, though.
+        if capabilities?.capabilityClass != .secure, isTerminalBundleId(bundleId) {
+            return .blindKnownGood
+        }
+
         switch capabilities?.capabilityClass {
         case .axFull:
             return .axFull
@@ -46,6 +53,25 @@ package enum HostRuntimeProfile: String, Codable, Sendable {
         case nil:
             return isKnownGoodBlindBundleId(bundleId) ? .blindKnownGood : .blindUnknown
         }
+    }
+
+    private static let terminalBundleIds: Set<String> = [
+        "com.apple.terminal",
+        "com.googlecode.iterm2",
+        "dev.warp.warp-stable",
+        "dev.warp.warp",
+        "org.alacritty",
+        "io.alacritty",
+        "net.kovidgoyal.kitty",
+        "com.github.wez.wezterm",
+        "com.mitchellh.ghostty",
+        "co.zeit.hyper",
+        "org.tabby"
+    ]
+
+    package static func isTerminalBundleId(_ bundleId: String?) -> Bool {
+        guard let bundleId else { return false }
+        return terminalBundleIds.contains(bundleId.lowercased())
     }
 
     package static func isKnownGoodBlindBundleId(_ bundleId: String?) -> Bool {
@@ -73,7 +99,7 @@ package enum HostRuntimeProfile: String, Codable, Sendable {
             "com.anthropic.claudefordesktop"
         ]
 
-        if exactMatches.contains(normalized) {
+        if exactMatches.contains(normalized) || terminalBundleIds.contains(normalized) {
             return true
         }
 
