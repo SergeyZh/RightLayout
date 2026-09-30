@@ -317,7 +317,7 @@ private struct AutoCorrectionLimitsSection: View {
     var body: some View {
         WorkbenchSection(
             title: "Automatic correction limits",
-            detail: "What gets fixed on its own. Anything outside these limits is still one double-tap of Option away."
+            detail: "What gets fixed on its own. Anything outside these limits is still one double-tap of the trigger key away."
         ) {
             SummaryRow(
                 title: "Minimum word length",
@@ -470,19 +470,33 @@ private struct HotkeyPane: View {
             subtitle: "Manual correction is for deliberate recovery, not constant intervention.",
             issues: []
         ) {
-            WorkbenchSection(title: "Manual trigger", detail: "Double-tap one Option key to undo or cycle when automatic correction stays silent.") {
+            WorkbenchSection(title: "Manual trigger", detail: "Double-tap Option or Shift to fix the last word, undo, or cycle when automatic correction stays silent.") {
                 SettingsToggleRow(
                     title: "Enable manual correction trigger",
-                    detail: "Keeps double-tap Option available for last-word, selection, undo, and cycle flows.",
+                    detail: "Keeps the double-tap available for last-word, selection, undo, and cycle flows.",
                     isOn: $settings.hotkeyEnabled
                 )
 
                 Divider()
 
-                SummaryRow(title: "Double-tap Option side", detail: "Choose the Option key that should act as the manual trigger.") {
+                SummaryRow(title: "Double-tap key", detail: "The modifier key to tap twice quickly, without pressing anything in between.") {
+                    Picker("", selection: $settings.manualTriggerMode) {
+                        Text("Option (⌥)", bundle: settings.resourceBundle).tag(SettingsManager.ManualTriggerMode.doubleTapOption)
+                        Text("Shift (⇧)", bundle: settings.resourceBundle).tag(SettingsManager.ManualTriggerMode.doubleTapShift)
+                        Text("Both", bundle: settings.resourceBundle).tag(SettingsManager.ManualTriggerMode.doubleTapOptionOrShift)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 240)
+                    .disabled(!settings.hotkeyEnabled)
+                }
+
+                Divider()
+
+                SummaryRow(title: "Key side", detail: "Which of the two keys acts as the trigger. The other one keeps working as usual.") {
                     Picker("", selection: $settings.manualTriggerOptionSide) {
-                        Text("Left Option (⌥)", bundle: settings.resourceBundle).tag(SettingsManager.ManualTriggerOptionSide.left)
-                        Text("Right Option (⌥)", bundle: settings.resourceBundle).tag(SettingsManager.ManualTriggerOptionSide.right)
+                        Text("Left", bundle: settings.resourceBundle).tag(SettingsManager.ManualTriggerOptionSide.left)
+                        Text("Right", bundle: settings.resourceBundle).tag(SettingsManager.ManualTriggerOptionSide.right)
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
@@ -492,7 +506,7 @@ private struct HotkeyPane: View {
             }
 
             WorkbenchSection(title: "When to use it", detail: "Manual correction remains the reliable fallback for blind editors and ambiguous words.") {
-                Text(UIStrings.text("Tip: Select text and double-tap Option to cycle between EN, RU, and HE alternatives without changing more than the selected scope."))
+                Text(UIStrings.text("Tip: Select text and double-tap the trigger key to cycle between EN, RU, and HE alternatives without changing more than the selected scope."))
                     .font(Theme.Typography.body())
                     .foregroundStyle(Theme.Color.textSecondary)
             }

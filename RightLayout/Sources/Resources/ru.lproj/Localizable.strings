@@ -413,3 +413,16 @@
 "In those apps a word isn't retyped if this much time has passed since the last keystroke, so the retype can't land somewhere you moved to." = "В этих приложениях слово не перенабирается, если с последнего нажатия прошло больше этого времени — чтобы перенабор не попал туда, куда вы уже ушли.";
 "%.2f s" = "%.2f с";
 "Restore defaults" = "Восстановить по умолчанию";
+"Double-tap Option or Shift to fix the last word, undo, or cycle when automatic correction stays silent." = "Дважды нажмите Option или Shift, чтобы исправить последнее слово, отменить исправление или перебрать варианты, когда автоисправление не сработало.";
+"Keeps the double-tap available for last-word, selection, undo, and cycle flows." = "Двойное нажатие исправляет последнее слово или выделение, отменяет исправление и перебирает варианты.";
+"Double-tap key" = "Клавиша двойного нажатия";
+"The modifier key to tap twice quickly, without pressing anything in between." = "Клавиша-модификатор, которую нужно быстро нажать дважды, ничего не нажимая между нажатиями.";
+"Option (⌥)" = "Option (⌥)";
+"Shift (⇧)" = "Shift (⇧)";
+"Both" = "Обе";
+"Key side" = "Сторона клавиши";
+"Which of the two keys acts as the trigger. The other one keeps working as usual." = "Какая из двух клавиш срабатывает как триггер. Вторая работает как обычно.";
+"Left" = "Левая";
+"Right" = "Правая";
+"Tip: Select text and double-tap the trigger key to cycle between EN, RU, and HE alternatives without changing more than the selected scope." = "Совет: выделите текст и дважды нажмите клавишу-триггер, чтобы переключать варианты EN, RU и HE, не выходя за пределы выделения.";
+"What gets fixed on its own. Anything outside these limits is still one double-tap of the trigger key away." = "Что исправляется само. Всё, что вне этих рамок, по-прежнему исправляется двойным нажатием клавиши-триггера.";

@@ -413,3 +413,16 @@
 "In those apps a word isn't retyped if this much time has passed since the last keystroke, so the retype can't land somewhere you moved to." = "In those apps a word isn't retyped if this much time has passed since the last keystroke, so the retype can't land somewhere you moved to.";
 "%.2f s" = "%.2f s";
 "Restore defaults" = "Restore defaults";
+"Double-tap Option or Shift to fix the last word, undo, or cycle when automatic correction stays silent." = "Double-tap Option or Shift to fix the last word, undo, or cycle when automatic correction stays silent.";
+"Keeps the double-tap available for last-word, selection, undo, and cycle flows." = "Keeps the double-tap available for last-word, selection, undo, and cycle flows.";
+"Double-tap key" = "Double-tap key";
+"The modifier key to tap twice quickly, without pressing anything in between." = "The modifier key to tap twice quickly, without pressing anything in between.";
+"Option (⌥)" = "Option (⌥)";
+"Shift (⇧)" = "Shift (⇧)";
+"Both" = "Both";
+"Key side" = "Key side";
+"Which of the two keys acts as the trigger. The other one keeps working as usual." = "Which of the two keys acts as the trigger. The other one keeps working as usual.";
+"Left" = "Left";
+"Right" = "Right";
+"Tip: Select text and double-tap the trigger key to cycle between EN, RU, and HE alternatives without changing more than the selected scope." = "Tip: Select text and double-tap the trigger key to cycle between EN, RU, and HE alternatives without changing more than the selected scope.";
+"What gets fixed on its own. Anything outside these limits is still one double-tap of the trigger key away." = "What gets fixed on its own. Anything outside these limits is still one double-tap of the trigger key away.";
