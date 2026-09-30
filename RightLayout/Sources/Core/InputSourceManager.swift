@@ -267,6 +267,38 @@ final class InputSourceManager {
         return grouped
     }
     
+    /// Languages that have a keyboard layout enabled in macOS (System Settings →
+    /// Keyboard → Input Sources), regardless of which variant.
+    func enabledKeyboardLanguages() -> Set<Language> {
+        let filter: [CFString: Any] = [
+            kTISPropertyInputSourceType: kTISTypeKeyboardLayout as Any
+        ]
+        guard let list = TISCreateInputSourceList(filter as CFDictionary, false)?.takeRetainedValue() else {
+            return []
+        }
+
+        var languages: Set<Language> = []
+        for index in 0..<CFArrayGetCount(list) {
+            guard let src = CFArrayGetValueAtIndex(list, index) else { continue }
+            let source = unsafeBitCast(src, to: TISInputSource.self)
+            guard let langsPointer = TISGetInputSourceProperty(source, kTISPropertyInputSourceLanguages) else {
+                continue
+            }
+            let tags = unsafeBitCast(langsPointer, to: CFArray.self) as? [String] ?? []
+            // The first tag is the layout's primary language; later ones are merely
+            // "can also type" hints (Latin layouts list dozens of languages).
+            guard let primary = tags.first?.lowercased() else { continue }
+            if primary.hasPrefix("en") {
+                languages.insert(.english)
+            } else if primary.hasPrefix("ru") {
+                languages.insert(.russian)
+            } else if primary.hasPrefix("he") || primary.hasPrefix("iw") {
+                languages.insert(.hebrew)
+            }
+        }
+        return languages
+    }
+
     func currentLanguage() -> Language? {
         guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else {
             logger.warning("Failed to get current input source")

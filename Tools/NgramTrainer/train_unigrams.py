@@ -11,6 +11,7 @@ Used to:
 """
 
 import argparse
+import os
 import sys
 from collections import Counter
 
@@ -98,6 +99,21 @@ def save_tsv(counter: Counter, output_file: str):
         sys.exit(1)
 
 
+def add_extra_words(counter: Counter, extra_file: str, count: int) -> int:
+    """Guarantee words the corpus misses (rare inflections, domain terms).
+
+    One word per line; `#` starts a comment. Words already present keep their count.
+    """
+    added = 0
+    with open(extra_file, encoding="utf-8") as f:
+        for line in f:
+            word = line.split("#", 1)[0].strip().lower()
+            if word and word not in counter:
+                counter[word] = count
+                added += 1
+    return added
+
+
 def main():
     p = argparse.ArgumentParser(description="Train unigram word frequency list for OMFK")
     p.add_argument("--lang", required=True, choices=["ru", "en", "he"])
@@ -107,6 +123,8 @@ def main():
     p.add_argument("--min-len", type=int, default=2, help="Minimum token length (default: 2)")
     p.add_argument("--prune-max-vocab", type=int, default=1500000, help="Prune when vocab exceeds this (default: 1500000)")
     p.add_argument("--prune-keep", type=int, default=600000, help="Keep this many after prune (default: 600000)")
+    p.add_argument("--extra", help="Word list to always include (default: extra_words/<lang>.txt if present)")
+    p.add_argument("--extra-count", type=int, default=50, help="Count assigned to extra words (default: 50)")
     args = p.parse_args()
 
     print(f"Training {args.lang} unigrams from {args.input}...")
@@ -118,6 +136,10 @@ def main():
         prune_max_vocab=args.prune_max_vocab,
         prune_keep=max(args.prune_keep, args.top),
     )
+    extra = args.extra or os.path.join(os.path.dirname(os.path.abspath(__file__)), "extra_words", f"{args.lang}.txt")
+    if os.path.exists(extra):
+        added = add_extra_words(counter, extra, args.extra_count)
+        print(f"Added {added} extra words from {extra}")
     print(f"Saving to {args.output} ...")
     save_tsv(counter, args.output)
     print("✅ Unigrams complete!")

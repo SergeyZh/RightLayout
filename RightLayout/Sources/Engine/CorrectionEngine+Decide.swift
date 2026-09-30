@@ -15,6 +15,56 @@ extension CorrectionEngine {
         latencies: [TimeInterval] = [],
         editingEnvironment: EditingEnvironment = .accessibility
     ) async -> CorrectionResult {
+        let result = await correctTextUnrestricted(
+            text,
+            phraseBuffer: phraseBuffer,
+            expectedLayout: expectedLayout,
+            latencies: latencies,
+            editingEnvironment: editingEnvironment
+        )
+        return await restrictToEnabledLanguages(result)
+    }
+
+    /// Several decision paths (Hebrew short words, smart/split corrections, deferred
+    /// cascades) pick a target on their own; make sure none of them ever produces
+    /// text in, or converts from, a language the user doesn't work with.
+    private func restrictToEnabledLanguages(_ result: CorrectionResult) async -> CorrectionResult {
+        guard result.action != .none || result.pendingCorrection != nil || result.transliterationSuggestion != nil else {
+            return result
+        }
+
+        let enabled = await settings.enabledLanguages
+        let hypothesis = result.transaction?.hypothesis ?? result.evidence?.decision.layoutHypothesis
+        let targetAllowed = result.targetLanguage.map { enabled.contains($0) } ?? true
+        let hypothesisAllowed = hypothesis?.isAllowed(in: enabled) ?? true
+        let transliterationAllowed = result.transliterationSuggestion.map { enabled.contains($0.targetLanguage) } ?? true
+        guard !(targetAllowed && hypothesisAllowed && transliterationAllowed) else {
+            return result
+        }
+
+        logger.info("🚫 Correction dropped: it involves a language that is turned off")
+        pendingSuggestion = nil
+        cyclingState = nil
+        pendingWord = nil
+        return CorrectionResult(
+            corrected: nil,
+            action: .none,
+            pendingCorrection: nil,
+            pendingOriginal: nil,
+            trackingId: nil,
+            transliterationSuggestion: nil,
+            confidence: result.confidence,
+            evidence: result.evidence
+        )
+    }
+
+    private func correctTextUnrestricted(
+        _ text: String,
+        phraseBuffer: String,
+        expectedLayout: Language?,
+        latencies: [TimeInterval],
+        editingEnvironment: EditingEnvironment
+    ) async -> CorrectionResult {
         
         // Ticket 43: Don't correct empty or whitespace-only
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -914,7 +964,8 @@ extension CorrectionEngine {
             CyclingContext.Alternative(text: corrected, hypothesis: hypothesis)
         ]
 
-        for target in Language.allCases where target != sourceLayout && target != targetLayout {
+        let enabled = await settings.enabledLanguages
+        for target in Language.allCases where target != sourceLayout && target != targetLayout && enabled.contains(target) {
             guard let alternative = LayoutMapper.shared.convertBest(
                 original,
                 from: sourceLayout,
@@ -1077,7 +1128,8 @@ extension CorrectionEngine {
     func checkEarlyCorrection(_ text: String, bundleId: String? = nil) async -> String? {
         guard await shouldCorrect(for: bundleId) else { return nil }
         
-        if let decision = await router.checkEarlySwitch(token: text) {
+        if let decision = await router.checkEarlySwitch(token: text),
+           decision.layoutHypothesis.isAllowed(in: await settings.enabledLanguages) {
              logger.info("🚀 CONFIRMED Early Switch: \(text) detected as \(decision.language.rawValue)")
              
              // Determine source layout from hypothesis

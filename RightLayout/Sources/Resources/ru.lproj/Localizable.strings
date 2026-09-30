@@ -428,3 +428,8 @@
 "What gets fixed on its own. Anything outside these limits is still one double-tap of the trigger key away." = "Что исправляется само. Всё, что вне этих рамок, по-прежнему исправляется двойным нажатием клавиши-триггера.";
 "Hold Enter when the last word needs fixing" = "Не отправлять Enter, если слово нужно исправить";
 "If Enter ends a word typed in the wrong layout, the word is fixed and that Enter is not sent. Check the text and press Enter again. Keeps garbled or wrongly fixed messages from going out in Slack, Telegram and other chats." = "Если Enter нажат после слова в неправильной раскладке, слово исправляется, а сам Enter не отправляется. Проверьте текст и нажмите Enter ещё раз. Так в Slack, Telegram и другие чаты не уйдут сообщения с ошибкой или неверным исправлением.";
+"Working languages" = "Рабочие языки";
+"RightLayout only detects, converts and switches between these languages. Words are never turned into any other language." = "RightLayout определяет, перекодирует и переключает только эти языки. В другие языки слова никогда не превращаются.";
+"Match keyboard layouts enabled in macOS" = "Как раскладки, включённые в macOS";
+"Uses the languages of the input sources in System Settings → Keyboard → Input Sources, and follows changes there." = "Берёт языки источников ввода из Системных настроек → Клавиатура → Источники ввода и следит за их изменениями.";
+"With fewer than two languages there is nothing to switch between, so nothing gets corrected." = "Если выбрано меньше двух языков, переключать не между чем, и ничего исправляться не будет.";

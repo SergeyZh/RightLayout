@@ -71,7 +71,8 @@ extension CorrectionEngine {
         seen.insert(text)
         if let smart = smartCorrected { seen.insert(smart) }
 
-        for (from, to) in conversions {
+        let enabled = await settings.enabledLanguages
+        for (from, to) in conversions where enabled.contains(from) && enabled.contains(to) {
             let hyp = hypothesisFor(source: from, target: to)
             let variants = LayoutMapper.shared.convertAllVariants(text, from: from, to: to, activeLayouts: activeLayouts)
 

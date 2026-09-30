@@ -400,6 +400,67 @@ private struct AutoCorrectionLimitsSection: View {
     }
 }
 
+private struct WorkingLanguagesSection: View {
+    @ObservedObject private var settings = SettingsManager.shared
+
+    private var followsSystem: Binding<Bool> {
+        Binding(
+            get: { settings.customEnabledLanguages == nil },
+            set: { follow in
+                settings.customEnabledLanguages = follow ? nil : settings.enabledLanguages
+            }
+        )
+    }
+
+    private func isEnabled(_ language: Language) -> Binding<Bool> {
+        Binding(
+            get: { settings.enabledLanguages.contains(language) },
+            set: { enabled in
+                var languages = settings.enabledLanguages
+                if enabled {
+                    languages.insert(language)
+                } else {
+                    languages.remove(language)
+                }
+                settings.customEnabledLanguages = languages
+            }
+        )
+    }
+
+    private func title(for language: Language) -> String {
+        switch language {
+        case .english: return "English"
+        case .russian: return "Russian"
+        case .hebrew: return "Hebrew"
+        }
+    }
+
+    var body: some View {
+        WorkbenchSection(
+            title: "Working languages",
+            detail: "RightLayout only detects, converts and switches between these languages. Words are never turned into any other language."
+        ) {
+            SettingsToggleRow(
+                title: "Match keyboard layouts enabled in macOS",
+                detail: "Uses the languages of the input sources in System Settings → Keyboard → Input Sources, and follows changes there.",
+                isOn: followsSystem
+            )
+
+            ForEach(Language.allCases, id: \.self) { language in
+                Divider()
+                SettingsToggleRow(title: title(for: language), detail: nil, isOn: isEnabled(language))
+                    .disabled(settings.customEnabledLanguages == nil)
+            }
+
+            if settings.enabledLanguages.count < 2 {
+                Text(UIStrings.text("With fewer than two languages there is nothing to switch between, so nothing gets corrected."))
+                    .font(Theme.Typography.body())
+                    .foregroundStyle(Theme.Color.warning)
+            }
+        }
+    }
+}
+
 private struct LanguagesPane: View {
     @ObservedObject private var settings = SettingsManager.shared
     @State private var installed: [String: [InputSourceManager.InstalledLayoutVariant]] = [:]
@@ -410,6 +471,8 @@ private struct LanguagesPane: View {
             subtitle: "Map each working language to the exact macOS keyboard variant you actually use.",
             issues: []
         ) {
+            WorkingLanguagesSection()
+
             WorkbenchSection(
                 title: "Active layout variants",
                 detail: "Exact layout IDs reduce false positives in variant-sensitive cases such as Russian phonetic or Hebrew QWERTY."
