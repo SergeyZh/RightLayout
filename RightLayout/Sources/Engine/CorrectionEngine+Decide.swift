@@ -68,10 +68,12 @@ extension CorrectionEngine {
         )
         
         let preset = await settings.behaviorPreset
+        let limits = await settings.autoCorrectionLimits
         let baseDisposition = CorrectionDecisionPolicy.evaluate(
             evidence: evidence,
             environment: editingEnvironment,
-            preset: preset
+            preset: preset,
+            limits: limits
         )
         let currentTargetLang = decision.layoutHypothesis.targetLanguage
         let usesFastLane = evidence.tokenKind == .plain || evidence.isWhitelistedShort
@@ -84,7 +86,7 @@ extension CorrectionEngine {
             )
         }
 
-        if text.filter(\.isLetter).count <= 1 {
+        if text.filter(\.isLetter).count < max(1, limits.minimumWordLength) {
             riskPolicy = moreConservativeRiskPolicy(riskPolicy, .holdForHotkey)
         }
 

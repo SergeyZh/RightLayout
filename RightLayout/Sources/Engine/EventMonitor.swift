@@ -1635,14 +1635,21 @@ public final class EventMonitor {
         guard !expectedText.isEmpty else { return false }
         guard hostRuntimeProfile.allowsAutomaticBlindReplay else { return false }
         guard !inputSession.isDirty, activeSyntheticTransactions == 0 else { return false }
-        guard timeProvider.now.timeIntervalSince(inputSession.lastMutationAt) <= 0.55 else { return false }
-
-        let trimmed = expectedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 4, trimmed.count <= 18, trimmed.allSatisfy({ $0.isLetter }) else {
+        guard timeProvider.now.timeIntervalSince(inputSession.lastMutationAt) <= settings.blindReplayMaxDelay else {
             return false
         }
 
-        let threshold = max(settings.standardPathThreshold + 0.06, 0.88)
+        let trimmed = expectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= max(1, settings.minAutoCorrectWordLength),
+              trimmed.count <= 18,
+              trimmed.allSatisfy({ $0.isLetter }) else {
+            return false
+        }
+
+        let threshold = CorrectionDecisionPolicy.blindAutoApplyThreshold(
+            preset: settings.behaviorPreset,
+            limits: settings.autoCorrectionLimits
+        )
         guard let confidence, confidence >= threshold else {
             return false
         }

@@ -251,6 +251,8 @@ private struct GeneralPane: View {
                 )
             }
 
+            AutoCorrectionLimitsSection()
+
             WorkbenchSection(title: "Language bias", detail: "Tie-breakers should be explicit so ambiguous tokens never feel random.") {
                 SummaryRow(title: "Preferred language", detail: "Used only when the token is otherwise ambiguous.") {
                     Picker("", selection: $settings.preferredLanguage) {
@@ -304,6 +306,87 @@ private struct GeneralPane: View {
                     .buttonStyle(.plain)
                     .secondaryActionButton()
                 }
+            }
+        }
+    }
+}
+
+private struct AutoCorrectionLimitsSection: View {
+    @ObservedObject private var settings = SettingsManager.shared
+
+    var body: some View {
+        WorkbenchSection(
+            title: "Automatic correction limits",
+            detail: "What gets fixed on its own. Anything outside these limits is still one double-tap of Option away."
+        ) {
+            SummaryRow(
+                title: "Minimum word length",
+                detail: "Shorter words are only corrected with the hotkey. Short words are ambiguous, so they still need high confidence."
+            ) {
+                Stepper(
+                    value: $settings.minAutoCorrectWordLength,
+                    in: SettingsManager.autoCorrectWordLengthRange
+                ) {
+                    Text(UIStrings.format("Letters: %d", settings.minAutoCorrectWordLength))
+                        .font(Theme.Typography.body())
+                        .monospacedDigit()
+                }
+                .frame(width: 180, alignment: .trailing)
+            }
+
+            Divider()
+
+            SummaryRow(
+                title: "Confidence in apps without Accessibility",
+                detail: "Claude, Slack, VS Code and other Electron apps don't expose their text, so the word is retyped without checking it first. Lower means more corrections, higher means fewer mistakes. The correction style shifts this by ±6%."
+            ) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Slider(
+                        value: $settings.blindAutoCorrectConfidence,
+                        in: SettingsManager.blindAutoCorrectConfidenceRange,
+                        step: 0.01
+                    )
+                    .frame(width: 140)
+                    Text("\(Int((settings.blindAutoCorrectConfidence * 100).rounded()))%")
+                        .font(Theme.Typography.body())
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+
+            Divider()
+
+            SummaryRow(
+                title: "Maximum pause before retyping",
+                detail: "In those apps a word isn't retyped if this much time has passed since the last keystroke, so the retype can't land somewhere you moved to."
+            ) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Slider(
+                        value: $settings.blindReplayMaxDelay,
+                        in: SettingsManager.blindReplayMaxDelayRange,
+                        step: 0.05
+                    )
+                    .frame(width: 140)
+                    Text(UIStrings.format("%.2f s", settings.blindReplayMaxDelay))
+                        .font(Theme.Typography.body())
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button {
+                    settings.minAutoCorrectWordLength = AutoCorrectionLimits.default.minimumWordLength
+                    settings.blindAutoCorrectConfidence = AutoCorrectionLimits.default.blindConfidence
+                    settings.blindReplayMaxDelay = SettingsManager.defaultBlindReplayMaxDelay
+                } label: {
+                    Label(UIStrings.text("Restore defaults"), systemImage: "arrow.uturn.backward")
+                }
+                .buttonStyle(.plain)
+                .secondaryActionButton()
             }
         }
     }

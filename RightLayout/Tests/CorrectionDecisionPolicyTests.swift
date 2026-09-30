@@ -70,4 +70,76 @@ final class CorrectionDecisionPolicyTests: XCTestCase {
 
         XCTAssertEqual(disposition, .manualOnly)
     }
+
+    func testShortWordAutoAppliesInNonAccessibilityByDefault() {
+        let evidence = makeEvidence(
+            original: "yt",
+            converted: "не",
+            confidence: 0.95,
+            margin: 0.30,
+            tokenKind: .short
+        )
+
+        let disposition = CorrectionDecisionPolicy.evaluate(
+            evidence: evidence,
+            environment: .nonAccessibility,
+            preset: .balanced
+        )
+
+        XCTAssertEqual(disposition, .autoApply)
+    }
+
+    func testMinimumWordLengthKeepsShorterWordsManual() {
+        let evidence = makeEvidence(
+            original: "yt",
+            converted: "не",
+            confidence: 0.95,
+            margin: 0.30,
+            tokenKind: .short
+        )
+
+        let disposition = CorrectionDecisionPolicy.evaluate(
+            evidence: evidence,
+            environment: .accessibility,
+            preset: .balanced,
+            limits: AutoCorrectionLimits(minimumWordLength: 3, blindConfidence: 0.88)
+        )
+
+        XCTAssertEqual(disposition, .manualOnly)
+    }
+
+    func testFourLetterWordAutoAppliesInNonAccessibility() {
+        let evidence = makeEvidence(
+            original: "ntcn",
+            converted: "тест",
+            confidence: 0.90,
+            margin: 0.20
+        )
+
+        let disposition = CorrectionDecisionPolicy.evaluate(
+            evidence: evidence,
+            environment: .nonAccessibility,
+            preset: .balanced
+        )
+
+        XCTAssertEqual(disposition, .autoApply)
+    }
+
+    func testBlindConfidenceSettingRaisesNonAccessibilityBar() {
+        let evidence = makeEvidence(
+            original: "ghbdtn",
+            converted: "привет",
+            confidence: 0.90,
+            margin: 0.20
+        )
+
+        let disposition = CorrectionDecisionPolicy.evaluate(
+            evidence: evidence,
+            environment: .nonAccessibility,
+            preset: .balanced,
+            limits: AutoCorrectionLimits(minimumWordLength: 2, blindConfidence: 0.95)
+        )
+
+        XCTAssertEqual(disposition, .hint)
+    }
 }

@@ -109,6 +109,38 @@ public final class SettingsManager: ObservableObject {
     @Published var isFoundationModelEnabled: Bool {
         didSet { UserDefaults.standard.set(isFoundationModelEnabled, forKey: "isFoundationModelEnabled") }
     }
+
+    // MARK: - Automatic correction limits
+
+    static let autoCorrectWordLengthRange: ClosedRange<Int> = 1...6
+    static let blindAutoCorrectConfidenceRange: ClosedRange<Double> = 0.60...0.99
+    static let blindReplayMaxDelayRange: ClosedRange<Double> = 0.3...2.0
+    static let defaultBlindReplayMaxDelay: Double = 0.55
+
+    /// Words with fewer letters are never corrected automatically, only via the hotkey.
+    @Published var minAutoCorrectWordLength: Int {
+        didSet { UserDefaults.standard.set(minAutoCorrectWordLength, forKey: "minAutoCorrectWordLength") }
+    }
+
+    /// Confidence a correction needs in apps that don't expose their text over
+    /// Accessibility (Electron apps such as Claude, Slack, VS Code), where the word is
+    /// retyped without being able to verify the result first.
+    @Published var blindAutoCorrectConfidence: Double {
+        didSet { UserDefaults.standard.set(blindAutoCorrectConfidence, forKey: "blindAutoCorrectConfidence") }
+    }
+
+    /// In those apps, retyping is skipped when more time than this has passed since the
+    /// last keystroke: the user may have moved on and the retype could land elsewhere.
+    @Published var blindReplayMaxDelay: Double {
+        didSet { UserDefaults.standard.set(blindReplayMaxDelay, forKey: "blindReplayMaxDelay") }
+    }
+
+    var autoCorrectionLimits: AutoCorrectionLimits {
+        AutoCorrectionLimits(
+            minimumWordLength: minAutoCorrectWordLength,
+            blindConfidence: blindAutoCorrectConfidence
+        )
+    }
     
     // MARK: - Ticket 68: Behavior Presets
     
@@ -276,6 +308,15 @@ public final class SettingsManager: ObservableObject {
         self.isVerifierEnabled = UserDefaults.standard.object(forKey: "isVerifierEnabled") as? Bool ?? !isTesting
         self.isFoundationModelEnabled = UserDefaults.standard.object(forKey: "isFoundationModelEnabled") as? Bool ?? true
         self.checkForUpdatesAutomatically = UserDefaults.standard.object(forKey: "checkForUpdatesAutomatically") as? Bool ?? true
+
+        let storedMinLength = UserDefaults.standard.object(forKey: "minAutoCorrectWordLength") as? Int
+            ?? AutoCorrectionLimits.default.minimumWordLength
+        self.minAutoCorrectWordLength = storedMinLength.clamped(to: Self.autoCorrectWordLengthRange)
+        let storedBlindConfidence = UserDefaults.standard.object(forKey: "blindAutoCorrectConfidence") as? Double
+            ?? AutoCorrectionLimits.default.blindConfidence
+        self.blindAutoCorrectConfidence = storedBlindConfidence.clamped(to: Self.blindAutoCorrectConfidenceRange)
+        let storedMaxDelay = UserDefaults.standard.object(forKey: "blindReplayMaxDelay") as? Double ?? Self.defaultBlindReplayMaxDelay
+        self.blindReplayMaxDelay = storedMaxDelay.clamped(to: Self.blindReplayMaxDelayRange)
         
         // Ticket 68: Behavior Preset
         let presetRaw = UserDefaults.standard.string(forKey: "behaviorPreset") ?? "balanced"
@@ -359,5 +400,11 @@ public final class SettingsManager: ObservableObject {
     /// Re-runs layout auto-detection and persists the results.
     func autoDetectLayouts() {
         detectAndUpdateLayouts()
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }
