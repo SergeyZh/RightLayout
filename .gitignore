@@ -12,6 +12,7 @@ Package.resolved
 Tools/NgramTrainer/*
 !Tools/NgramTrainer/train_ngrams.py
 !Tools/NgramTrainer/train_unigrams.py
+!Tools/NgramTrainer/extra_words/
 data/raw/*
 Tools/CoreMLTrainer/venv/*
 *__pycache__*
