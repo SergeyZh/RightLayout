@@ -28,6 +28,15 @@ public final class EventMonitor {
         var keyCode: CGKeyCode?
     }
 
+    /// An Enter held back while deciding whether the word it ends needs correcting.
+    private struct HeldEnter {
+        let id: UInt64
+        let keyCode: CGKeyCode
+        let flags: CGEventFlags
+        /// The word is being replaced; this Enter is swallowed no matter what.
+        var consumed = false
+    }
+
     private struct CommittedTokenContext {
         let token: String
         let separator: String
@@ -148,6 +157,15 @@ public final class EventMonitor {
     private var invalidatedAtMutationSeq: UInt64?
     private var deferredResyncTask: Task<Void, Never>?
     private var suppressLayoutFeedbackUntil: Date = .distantPast
+    private var heldEnter: HeldEnter?
+    private var heldEnterSeq: UInt64 = 0
+    /// After a correction made on Enter, the next Enter goes straight through.
+    private var passNextEnter = false
+    private let keyEventPoster = CGEventPoster()
+
+    private static let returnKeyCodes: Set<CGKeyCode> = [36, 76]
+    /// Upper bound for holding Enter while the correction is being decided.
+    private static let heldEnterTimeout: UInt64 = 500_000_000
 
     /// Delay before re-reading the focused text after cursor movement or other external
     /// changes. Reading it synchronously from the event tap stalls every keystroke.
@@ -156,6 +174,8 @@ public final class EventMonitor {
     private static let boundaryVerificationRetryDelay: UInt64 = 5_000_000
 
     package private(set) var lastReplacement: (deletedCount: Int, insertedText: String)?
+    /// Held Enters that were let through (for tests; nothing is posted with `skipEventPosting`).
+    package private(set) var releasedEnterCount = 0
 
     package convenience init(engine: CorrectionEngine) {
         self.init(
@@ -521,6 +541,15 @@ public final class EventMonitor {
         let flags = event.flags
         let now = timeProvider.now
 
+        // The user kept typing while an Enter was held: let it through first.
+        if heldEnter != nil {
+            releaseHeldEnterEarly(proxy: proxy)
+        }
+        let isReturnKey = Self.returnKeyCodes.contains(keyCode)
+        if !isReturnKey {
+            passNextEnter = false
+        }
+
         if flags.contains(.maskCommand) {
             cancelStandaloneOptionTap()
             if keyCode == 6 {
@@ -553,6 +582,10 @@ public final class EventMonitor {
             }
             handleExternalInvalidation(reason: "Navigation", clearPhraseContext: false)
             return Unmanaged.passUnretained(event)
+        }
+
+        if isReturnKey, shouldHoldEnter(now: now) {
+            return holdEnter(keyCode: keyCode, flags: flags, proxy: proxy, now: now)
         }
 
         guard let chars = charEncoder.encode(event: event), !chars.isEmpty else {
@@ -624,6 +657,109 @@ public final class EventMonitor {
         return Unmanaged.passUnretained(event)
     }
 
+    private func shouldHoldEnter(now: Date) -> Bool {
+        if passNextEnter {
+            passNextEnter = false
+            return false
+        }
+        guard settings.holdEnterForCorrection,
+              settings.isEnabled,
+              !settings.isExcluded(bundleId: lastActiveApp),
+              inputSession.typedToken.contains(where: \.isLetter) else {
+            return false
+        }
+        if let lastKeyTime,
+           now.timeIntervalSince(lastKeyTime) > ThresholdsConfig.shared.timing.bufferTimeout {
+            return false
+        }
+        return true
+    }
+
+    /// Swallows the Enter and decides whether the word before it needs correcting.
+    /// If it does, the word is fixed and the Enter stays swallowed, so a chat message
+    /// isn't sent garbled (or wrongly "fixed") without the user seeing it first.
+    /// Otherwise the Enter is posted again right away.
+    private func holdEnter(
+        keyCode: CGKeyCode,
+        flags: CGEventFlags,
+        proxy: CGEventTapProxy,
+        now: Date
+    ) -> Unmanaged<CGEvent>? {
+        cancelStandaloneOptionTap()
+        clearTransliterationHint()
+
+        let token = inputSession.typedToken
+        inputSession.typedToken = ""
+        boundaryGeneration &+= 1
+        bumpSessionMutation(at: now)
+        lastKeyTime = now
+        let expectedMutationSeq = inputSession.mutationSeq
+        let generation = boundaryGeneration
+        let latencies = keyTimings
+        keyTimings.removeAll()
+
+        heldEnterSeq &+= 1
+        let id = heldEnterSeq
+        heldEnter = HeldEnter(id: id, keyCode: keyCode, flags: flags)
+
+        Task { @MainActor in
+            let replaced = await processCommittedBoundary(
+                token: token,
+                separator: "",
+                proxy: proxy,
+                expectedMutationSeq: expectedMutationSeq,
+                boundaryGeneration: generation,
+                latencies: latencies,
+                heldEnterId: id
+            )
+            finishHeldEnter(id: id, replaced: replaced)
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.heldEnterTimeout)
+            self?.heldEnterTimedOut(id: id)
+        }
+        return nil
+    }
+
+    private func markHeldEnterConsumed(_ id: UInt64?) {
+        guard let id, heldEnter?.id == id else { return }
+        heldEnter?.consumed = true
+    }
+
+    private func finishHeldEnter(id: UInt64, replaced: Bool) {
+        guard let held = heldEnter, held.id == id else { return }
+        heldEnter = nil
+        if replaced || held.consumed {
+            // The word was changed (or a change was attempted): let the user look at it.
+            // Their next Enter goes straight through.
+            passNextEnter = true
+        } else {
+            postHeldEnter(held, proxy: nil)
+        }
+    }
+
+    private func heldEnterTimedOut(id: UInt64) {
+        guard let held = heldEnter, held.id == id, !held.consumed else { return }
+        heldEnter = nil
+        // Too late to correct before sending; drop the pending correction.
+        boundaryGeneration &+= 1
+        postHeldEnter(held, proxy: nil)
+    }
+
+    private func releaseHeldEnterEarly(proxy: CGEventTapProxy) {
+        guard let held = heldEnter else { return }
+        heldEnter = nil
+        guard !held.consumed else { return }
+        boundaryGeneration &+= 1
+        postHeldEnter(held, proxy: proxy)
+    }
+
+    private func postHeldEnter(_ held: HeldEnter, proxy: CGEventTapProxy?) {
+        releasedEnterCount += 1
+        guard !skipEventPosting else { return }
+        keyEventPoster.postKeyEvent(keyCode: held.keyCode, flags: held.flags, proxy: proxy)
+    }
+
     private func handleBackspace() {
         clearTransliterationHint()
 
@@ -675,21 +811,24 @@ public final class EventMonitor {
         }
     }
 
+    /// Returns `true` if the word was replaced.
+    @discardableResult
     private func processCommittedBoundary(
         token: String,
         separator: String,
         proxy: CGEventTapProxy,
         expectedMutationSeq: UInt64,
         boundaryGeneration generation: UInt64,
-        latencies: [TimeInterval]
-    ) async {
+        latencies: [TimeInterval],
+        heldEnterId: UInt64? = nil
+    ) async -> Bool {
         boundaryTasksInFlight += 1
         defer { boundaryTasksInFlight -= 1 }
 
         runtimeState = .boundaryPending
         guard generation == boundaryGeneration else {
             preserveCommittedBoundaryIfNeeded(token: token, separator: separator)
-            return
+            return false
         }
 
         let isSyntheticHost = skipEventPosting || skipPIDCheck
@@ -719,7 +858,7 @@ public final class EventMonitor {
             lastCorrectionTrackingId = nil
             lastCorrectionTime = .distantPast
             Task { await engine.resetCycling() }
-            return
+            return false
         }
 
         if let acceptedId = lastCorrectionTrackingId {
@@ -782,7 +921,7 @@ public final class EventMonitor {
               !typedSinceBoundary || (matchesAutoReplace(planned.plan) && planned.result.pendingCorrection == nil) else {
             preserveCommittedBoundaryIfNeeded(token: token, separator: separator)
             await engine.resetCycling()
-            return
+            return false
         }
 
         let outputToken = planned.result.corrected ?? token
@@ -822,9 +961,11 @@ public final class EventMonitor {
                     preserveCommittedBoundaryIfNeeded(token: token, separator: separator)
                     await engine.resetCycling()
                 }
-                return
+                return false
             }
             let combinedContext = combinedVerification.context
+
+            markHeldEnterConsumed(heldEnterId)
 
             let combinedOriginal = combinedContext.verifiedText
             let inserted = pendingCorrection + last.separator + outputToken + (combinedVerification.includesSeparator ? separator : "")
@@ -839,7 +980,7 @@ public final class EventMonitor {
                 hostRuntimeProfile: hostProfile,
                 proxy: proxy
             )
-            guard let applied else { return }
+            guard let applied else { return false }
 
             replaceLastPhraseBufferWord(from: pendingOriginal, to: pendingCorrection)
             updatePhraseBuffer(with: splitBufferContent(outputToken).token)
@@ -858,7 +999,7 @@ public final class EventMonitor {
             if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
                 switchInputSourceIfNeeded(to: planned.result.targetLanguage, transactionId: planned.result.transaction?.id)
             }
-            return
+            return true
         }
 
         switch planned.plan {
@@ -867,6 +1008,7 @@ public final class EventMonitor {
             let targetLanguage = planned.result.targetLanguage
             let allowEventReplayFallback =
                 inputSession.typedToken.isEmpty &&
+                !separator.contains(where: { $0.isNewline }) &&
                 hostProfile.allowsAutomaticBlindReplay &&
                 shouldAllowAutomaticReplayFallback(
                     for: token + separator,
@@ -901,7 +1043,7 @@ public final class EventMonitor {
                 }
                 preserveCommittedBoundaryIfNeeded(token: token, separator: separator)
                 await engine.resetCycling()
-                return
+                return false
             }
 
             guard verification != nil || allowEventReplayFallback else {
@@ -911,7 +1053,7 @@ public final class EventMonitor {
                 updatePhraseBuffer(with: splitBufferContent(token).token)
                 lastCommittedToken = CommittedTokenContext(token: token, separator: separator)
                 setTransliterationHint(nil, separator: separator, commitRevision: expectedMutationSeq)
-                return
+                return false
             }
 
             let expectedOriginal: String
@@ -934,6 +1076,8 @@ public final class EventMonitor {
                 replacement = candidate.replacement + separator
             }
 
+            markHeldEnterConsumed(heldEnterId)
+
             let applied = await performReplacement(
                 intent: .autoCorrection,
                 expectedOriginal: expectedOriginal,
@@ -949,7 +1093,7 @@ public final class EventMonitor {
                 if switchedEarly {
                     revertInputSource(to: layoutBeforeSwitch)
                 }
-                return
+                return false
             }
 
             lastCommittedToken = CommittedTokenContext(token: candidate.replacement, separator: separator)
@@ -973,6 +1117,8 @@ public final class EventMonitor {
             } else if switchAllowed {
                 switchInputSourceIfNeeded(to: targetLanguage, transactionId: transaction?.id)
             }
+            runtimeState = .tracking
+            return true
         case .hint, .none:
             updatePhraseBuffer(with: splitBufferContent(outputToken).token)
             lastCommittedToken = CommittedTokenContext(token: outputToken, separator: separator)
@@ -981,6 +1127,7 @@ public final class EventMonitor {
             break
         }
         runtimeState = .tracking
+        return false
     }
 
     /// Converts characters typed after a boundary whose word is being auto-corrected.
