@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 package struct ReplayTimingProfile: Sendable {
     package let boundarySettleDelay: UInt64
@@ -31,6 +32,12 @@ package enum HostRuntimeProfile: String, Codable, Sendable {
         case .axFull:
             return .axFull
         case .axPartial:
+            // Chromium-based hosts sometimes expose a partial AX tree without the text
+            // itself. Nothing can be verified or edited through it, so handle them like
+            // the blind host they effectively are.
+            if capabilities?.supportsFullTextRead == false, isKnownGoodBlindBundleId(bundleId) {
+                return .blindKnownGood
+            }
             return .axPartial
         case .secure:
             return .secure
@@ -42,9 +49,10 @@ package enum HostRuntimeProfile: String, Codable, Sendable {
     }
 
     package static func isKnownGoodBlindBundleId(_ bundleId: String?) -> Bool {
-        guard let normalized = bundleId?.lowercased(), !normalized.isEmpty else {
+        guard let bundleId, !bundleId.isEmpty else {
             return false
         }
+        let normalized = bundleId.lowercased()
 
         let exactMatches: Set<String> = [
             "com.microsoft.vscode",
@@ -61,7 +69,8 @@ package enum HostRuntimeProfile: String, Codable, Sendable {
             "notion.id",
             "md.obsidian",
             "com.jetbrains.intellij",
-            "com.jetbrains.pycharm"
+            "com.jetbrains.pycharm",
+            "com.anthropic.claudefordesktop"
         ]
 
         if exactMatches.contains(normalized) {
@@ -77,6 +86,8 @@ package enum HostRuntimeProfile: String, Codable, Sendable {
             || normalized.contains("slack")
             || normalized.contains("notion")
             || normalized.contains("obsidian")
+            || normalized.hasPrefix("com.anthropic.")
+            || ChromiumHostDetector.shared.isChromiumBased(bundleId: bundleId)
     }
 
     package var editingEnvironment: EditingEnvironment {
@@ -189,6 +200,46 @@ package final class RuntimeTraceLogger: @unchecked Sendable {
             DecisionLogger.shared.log("TRACE \(event.rawValue)")
         } else {
             DecisionLogger.shared.log("TRACE \(event.rawValue) \(payload)")
+        }
+    }
+}
+
+/// Detects Electron / Chromium Embedded Framework apps. Their text fields behave like
+/// Chrome's, so the replay strategy that works there works for them too, without
+/// having to list every such app by bundle identifier.
+final class ChromiumHostDetector: @unchecked Sendable {
+    static let shared = ChromiumHostDetector()
+
+    private static let frameworkMarkers = [
+        "Electron Framework.framework",
+        "Chromium Embedded Framework.framework"
+    ]
+
+    private let lock = NSLock()
+    private var cache: [String: Bool] = [:]
+
+    func isChromiumBased(bundleId: String) -> Bool {
+        lock.lock()
+        let cached = cache[bundleId]
+        lock.unlock()
+        if let cached {
+            return cached
+        }
+
+        let detected = detect(bundleId: bundleId)
+        lock.lock()
+        cache[bundleId] = detected
+        lock.unlock()
+        return detected
+    }
+
+    private func detect(bundleId: String) -> Bool {
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
+            return false
+        }
+        let frameworks = appURL.appendingPathComponent("Contents/Frameworks", isDirectory: true)
+        return Self.frameworkMarkers.contains { marker in
+            FileManager.default.fileExists(atPath: frameworks.appendingPathComponent(marker).path)
         }
     }
 }

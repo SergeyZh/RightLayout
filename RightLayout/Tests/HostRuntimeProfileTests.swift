@@ -62,4 +62,41 @@ final class HostRuntimeProfileTests: XCTestCase {
         XCTAssertFalse(profile.allowsManualLastWordReplay)
         XCTAssertFalse(profile.allowsManualSelectionClipboardFallback)
     }
+
+    func testClaudeDesktopResolvesToBlindKnownGood() {
+        let profile = HostRuntimeProfile.resolve(
+            bundleId: "com.anthropic.claudefordesktop",
+            capabilities: AppEditCapabilities(
+                supportsSelectedTextWrite: false,
+                supportsSelectedRangeWrite: false,
+                supportsValueWrite: false,
+                supportsSelectionRead: false,
+                supportsFullTextRead: false,
+                isSecureOrReadBlind: true,
+                capabilityClass: .blind,
+                elementFingerprint: nil
+            )
+        )
+
+        XCTAssertEqual(profile, .blindKnownGood)
+        XCTAssertTrue(profile.allowsAutomaticBlindReplay)
+    }
+
+    func testKnownGoodHostWithPartialAXWithoutTextResolvesToBlindKnownGood() {
+        let profile = HostRuntimeProfile.resolve(
+            bundleId: "com.tinyspeck.slackmacgap",
+            capabilities: AppEditCapabilities(
+                supportsSelectedTextWrite: false,
+                supportsSelectedRangeWrite: false,
+                supportsValueWrite: false,
+                supportsSelectionRead: true,
+                supportsFullTextRead: false,
+                isSecureOrReadBlind: false,
+                capabilityClass: .axPartial,
+                elementFingerprint: nil
+            )
+        )
+
+        XCTAssertEqual(profile, .blindKnownGood)
+    }
 }
