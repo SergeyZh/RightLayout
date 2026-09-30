@@ -1,12 +1,20 @@
 import SwiftUI
 
 public struct PermissionRequestView: View {
-    public init() {}
+    private let onGranted: @MainActor () -> Void
+
+    /// - Parameter onGranted: Called once the permission is detected, so the host can
+    ///   start monitoring and dismiss this window.
+    public init(onGranted: @escaping @MainActor () -> Void = {}) {
+        self.onGranted = onGranted
+    }
 
     @State private var isChecking = false
     @State private var isGranted = SandboxPermissionManager.shared.checkAccessibilityPermission()
+    @State private var resetStatus: String?
 
     private let privacyURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    private let bundleIdentifier = SandboxPermissionManager.shared.appBundleIdentifier
 
     public var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
@@ -50,12 +58,7 @@ public struct PermissionRequestView: View {
                 HStack(spacing: Theme.Spacing.md) {
                     Button {
                         SandboxPermissionManager.shared.requestAccessibilityPermission()
-                        if let privacyURL {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                NSWorkspace.shared.open(privacyURL)
-                            }
-                        }
-                        startPolling()
+                        openPrivacySettings()
                     } label: {
                         Label(UIStrings.text("Open Accessibility Settings"), systemImage: "gearshape")
                     }
@@ -72,32 +75,98 @@ public struct PermissionRequestView: View {
                     .disabled(isChecking)
                 }
             }
-        }
-        .padding(Theme.Spacing.xxl)
-        .frame(width: 480)
-        .background(Theme.Color.pageBackgroundPrimary)
-    }
 
-    private func checkPermission() {
-        isChecking = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            isGranted = SandboxPermissionManager.shared.checkAccessibilityPermission()
-            isChecking = false
-        }
-    }
+            if !isGranted {
+                if bundleIdentifier == nil {
+                    WorkbenchSection(title: "Running from Terminal", detail: nil) {
+                        Text(UIStrings.text("RightLayout was started outside of its app bundle, so macOS checks the permission of the app that launched it. Enable Accessibility for Terminal (or iTerm) instead, then restart it."))
+                            .font(Theme.Typography.body())
+                            .foregroundStyle(Theme.Color.textSecondary)
+                    }
+                } else {
+                    WorkbenchSection(title: "Already enabled?", detail: nil) {
+                        Text(UIStrings.text("If RightLayout is already switched on in the list but this window doesn't change, the entry belongs to a previous build or installation. Reset it, then enable RightLayout again."))
+                            .font(Theme.Typography.body())
+                            .foregroundStyle(Theme.Color.textSecondary)
 
-    private func startPolling() {
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-            let granted = MainActor.assumeIsolated {
-                SandboxPermissionManager.shared.checkAccessibilityPermission()
-            }
-            if granted {
-                timer.invalidate()
-                Task { @MainActor in
-                    isGranted = true
+                        Button {
+                            resetPermission()
+                        } label: {
+                            Label(UIStrings.text("Reset Permission"), systemImage: "arrow.counterclockwise")
+                        }
+                        .buttonStyle(.plain)
+                        .secondaryActionButton()
+
+                        if let resetStatus {
+                            Text(resetStatus)
+                                .font(Theme.Typography.body())
+                                .foregroundStyle(Theme.Color.textSecondary)
+                                .textSelection(.enabled)
+                        }
+                    }
                 }
             }
         }
+        .padding(Theme.Spacing.xxl)
+        .frame(width: 480)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(Theme.Color.pageBackgroundPrimary)
+        .task {
+            await pollPermission()
+        }
+    }
+
+    private func openPrivacySettings() {
+        guard let privacyURL else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            NSWorkspace.shared.open(privacyURL)
+        }
+    }
+
+    @MainActor
+    private func checkPermission() {
+        isChecking = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            MainActor.assumeIsolated {
+                updateGranted(SandboxPermissionManager.shared.checkAccessibilityPermission())
+                isChecking = false
+            }
+        }
+    }
+
+    @MainActor
+    private func resetPermission() {
+        if SandboxPermissionManager.shared.resetAccessibilityPermission() {
+            resetStatus = UIStrings.text("The old entry was removed. Enable RightLayout in the list that opens.")
+            SandboxPermissionManager.shared.requestAccessibilityPermission()
+            openPrivacySettings()
+        } else if let bundleIdentifier {
+            resetStatus = UIStrings.text("Could not reset automatically. Run this in Terminal, then reopen RightLayout:")
+                + "\ntccutil reset Accessibility \(bundleIdentifier)"
+        }
+    }
+
+    /// Watches for the permission while the window is open: macOS doesn't notify
+    /// the app when the switch in System Settings is turned on.
+    @MainActor
+    private func pollPermission() async {
+        while !Task.isCancelled {
+            if updateGranted(SandboxPermissionManager.shared.checkAccessibilityPermission()) {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+    }
+
+    @MainActor
+    @discardableResult
+    private func updateGranted(_ granted: Bool) -> Bool {
+        isGranted = granted
+        if granted {
+            // May be called more than once; the host handles repeats.
+            onGranted()
+        }
+        return granted
     }
 }
 

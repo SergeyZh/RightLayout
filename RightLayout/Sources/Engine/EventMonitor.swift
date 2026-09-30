@@ -295,7 +295,15 @@ public final class EventMonitor {
         }
     }
 
+    /// Whether the keyboard event tap is installed. It can't be created until the
+    /// Accessibility permission is granted.
+    package var isRunning: Bool {
+        eventTap != nil
+    }
+
     package func start() async {
+        guard eventTap == nil else { return }
+
         // Only keyboard events go through the active tap: every event it receives is held
         // until the callback returns. Mouse and scroll events are observed passively below
         // so the pointer and scrolling never wait on us.
@@ -338,6 +346,7 @@ public final class EventMonitor {
             },
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
+            logger.error("Failed to create keyboard event tap (Accessibility permission missing?)")
             return
         }
 

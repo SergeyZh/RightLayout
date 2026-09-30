@@ -81,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var updateCheckTimer: Timer?
     private var permissionWindowController: NSWindowController?
     private var proactiveHintObserver: Any?
+    private var isHandlingPermissionGrant = false
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Enforce Single Instance
@@ -154,7 +155,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func openPermissionWindow() {
-        let view = PermissionRequestView()
+        let view = PermissionRequestView { [weak self] in
+            self?.accessibilityPermissionGranted()
+        }
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
         window.title = "RightLayout Permissions"
@@ -167,6 +170,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         
         self.permissionWindowController = controller
+    }
+
+    /// The event tap can't be created without Accessibility access, so the monitor
+    /// started at launch is idle. Start it now instead of requiring a restart.
+    private func accessibilityPermissionGranted() {
+        guard !isHandlingPermissionGrant else { return }
+        isHandlingPermissionGrant = true
+        Logger.app.info("Accessibility permission granted; starting EventMonitor")
+
+        Task { @MainActor in
+            if let monitor = self.eventMonitor, !monitor.isRunning {
+                await monitor.start()
+            }
+
+            // Let the window show the granted state for a moment.
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            self.permissionWindowController?.close()
+            self.permissionWindowController = nil
+
+            if let monitor = self.eventMonitor, !monitor.isRunning {
+                Logger.app.warning("Event tap still unavailable after permission grant")
+                self.offerRelaunch()
+            }
+        }
+    }
+
+    private func offerRelaunch() {
+        let alert = NSAlert()
+        alert.messageText = "Restart RightLayout"
+        alert.informativeText = "Accessibility access is granted, but macOS will only apply it after RightLayout restarts."
+        alert.addButton(withTitle: "Restart")
+        alert.addButton(withTitle: "Later")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let bundlePath = Bundle.main.bundlePath
+        if bundlePath.hasSuffix(".app") {
+            // Reopen once this instance is gone (the single-instance check would
+            // otherwise terminate the new one).
+            let relaunch = Process()
+            relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
+            relaunch.arguments = ["-c", "while /bin/kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$0\"", bundlePath, String(ProcessInfo.processInfo.processIdentifier)]
+            try? relaunch.run()
+        }
+        NSApp.terminate(nil)
     }
 
     // MARK: - Proactive Hints

@@ -1,4 +1,9 @@
 #!/bin/bash
 # Clear quarantine attribute after installation
-xattr -cr /Applications/OMFK.app 2>/dev/null || true
+xattr -cr /Applications/RightLayout.app 2>/dev/null || true
+
+# Builds are ad-hoc signed, so macOS treats every installed version as a new binary.
+# An Accessibility entry left from the previous version stays switched on in System
+# Settings but no longer applies. Drop it so the app can request access afresh.
+tccutil reset Accessibility com.chernistry.rightlayout >/dev/null 2>&1 || true
 exit 0
