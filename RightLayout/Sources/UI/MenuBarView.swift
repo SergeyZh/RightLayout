@@ -59,9 +59,7 @@ public struct MenuBarView: View {
 
             if !hasAccessibilityPermission {
                 Button {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                        NSWorkspace.shared.open(url)
-                    }
+                    SandboxPermissionManager.shared.requestAccessibilityPermission()
                 } label: {
                     Label(UIStrings.text("Grant Accessibility Permission…"), systemImage: "lock.open")
                 }

@@ -13,7 +13,6 @@ public struct PermissionRequestView: View {
     @State private var isGranted = SandboxPermissionManager.shared.checkAccessibilityPermission()
     @State private var resetStatus: String?
 
-    private let privacyURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
     private let bundleIdentifier = SandboxPermissionManager.shared.appBundleIdentifier
 
     public var body: some View {
@@ -48,7 +47,7 @@ public struct PermissionRequestView: View {
 
             WorkbenchSection(title: "What to do", detail: "Grant access once, then return here and confirm the status.") {
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    Text(UIStrings.text("1. Open System Settings → Privacy & Security → Accessibility"))
+                    Text(UIStrings.text("1. Click “Grant access”, then “Open System Settings” in the macOS dialog"))
                     Text(UIStrings.text("2. Enable the switch next to RightLayout"))
                     Text(UIStrings.text("3. If macOS asks, quit and reopen the app"))
                 }
@@ -58,9 +57,8 @@ public struct PermissionRequestView: View {
                 HStack(spacing: Theme.Spacing.md) {
                     Button {
                         SandboxPermissionManager.shared.requestAccessibilityPermission()
-                        openPrivacySettings()
                     } label: {
-                        Label(UIStrings.text("Open Accessibility Settings"), systemImage: "gearshape")
+                        Label(UIStrings.text("Grant access"), systemImage: "lock.open")
                     }
                     .buttonStyle(.plain)
                     .primaryActionButton()
@@ -116,13 +114,6 @@ public struct PermissionRequestView: View {
         }
     }
 
-    private func openPrivacySettings() {
-        guard let privacyURL else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            NSWorkspace.shared.open(privacyURL)
-        }
-    }
-
     @MainActor
     private func checkPermission() {
         isChecking = true
@@ -139,7 +130,6 @@ public struct PermissionRequestView: View {
         if SandboxPermissionManager.shared.resetAccessibilityPermission() {
             resetStatus = UIStrings.text("The old entry was removed. Enable RightLayout in the list that opens.")
             SandboxPermissionManager.shared.requestAccessibilityPermission()
-            openPrivacySettings()
         } else if let bundleIdentifier {
             resetStatus = UIStrings.text("Could not reset automatically. Run this in Terminal, then reopen RightLayout:")
                 + "\ntccutil reset Accessibility \(bundleIdentifier)"

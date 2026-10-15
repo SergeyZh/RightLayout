@@ -233,7 +233,7 @@
 "Without Accessibility access, automatic correction, manual last-word correction, and diagnostics for live typing remain blocked." = "ללא הרשאת Accessibility, התיקון האוטומטי, תיקון ידני של המילה האחרונה והאבחון בזמן הקלדה נשארים חסומים.";
 "What to do" = "מה לעשות";
 "Grant access once, then return here and confirm the status." = "הענק גישה פעם אחת, ואז חזור לכאן ואשר את המצב.";
-"1. Open System Settings → Privacy & Security → Accessibility" = "1. פתח הגדרות מערכת → Privacy & Security → Accessibility";
+"1. Click “Grant access”, then “Open System Settings” in the macOS dialog" = "1. לחץ על „הענק גישה”, ואז על „פתח את הגדרות המערכת” בחלון של macOS";
 "2. Enable the switch next to RightLayout" = "2. הפעל את המתג ליד RightLayout";
 "3. If macOS asks, quit and reopen the app" = "3. אם macOS מבקש, צא מהאפליקציה ופתח אותה מחדש";
 "Open Accessibility Settings" = "פתח הגדרות Accessibility";

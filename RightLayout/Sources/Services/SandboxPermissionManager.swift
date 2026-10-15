@@ -21,8 +21,10 @@ public final class SandboxPermissionManager {
         return trusted
     }
     
-    /// Prompts the user to grant Accessibility permission via system dialog.
-    func requestAccessibilityPermission() {
+    /// Shows macOS's own Accessibility alert. It adds the app to the list in System
+    /// Settings, and its "Open System Settings" button opens that list, so callers must
+    /// not open System Settings themselves as well (the alert would stay on screen).
+    public func requestAccessibilityPermission() {
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
     }
