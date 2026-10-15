@@ -436,3 +436,16 @@
 "Authorship" = "Authorship";
 "RightLayout SergeyZh is SergeyZh's build of RightLayout: a fork of RightLayout by Alex Chernysh, not the official RightLayout app." = "RightLayout SergeyZh is SergeyZh's build of RightLayout: a fork of RightLayout by Alex Chernysh, not the official RightLayout app.";
 "Original RightLayout project" = "Original RightLayout project";
+"Sound" = "Sound";
+"A short, quiet sound each time a word is corrected, automatically or with the trigger key." = "A short, quiet sound each time a word is corrected, automatically or with the trigger key.";
+"Play a sound on correction" = "Play a sound on correction";
+"Lets you notice a correction without looking at the text." = "Lets you notice a correction without looking at the text.";
+"Choosing a sound plays it." = "Choosing a sound plays it.";
+"Play" = "Play";
+"Volume" = "Volume";
+"Relative to the system volume." = "Relative to the system volume.";
+"Tick" = "Tick";
+"Pop" = "Pop";
+"Tap" = "Tap";
+"Glass" = "Glass";
+"Blip" = "Blip";

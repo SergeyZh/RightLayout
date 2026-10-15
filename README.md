@@ -37,6 +37,8 @@ SergeyZh's build of [RightLayout](https://github.com/chernistry/RightLayout) —
 - Words with punctuation stuck to them ("Вщту!" → "Done!") are corrected automatically.
 - Short words corrected automatically; limits configurable in Settings.
 - Manual correction by double-tapping Option or Shift.
+- A short, quiet sound on each correction: five sounds to choose from, volume control, can be
+  turned off (Settings → General → Sound).
 - Enter after a word that needs fixing fixes the word and is held back, so a garbled message is
   not sent in chat apps.
 - Working languages: only the languages you use (by default, the layouts enabled in macOS) are

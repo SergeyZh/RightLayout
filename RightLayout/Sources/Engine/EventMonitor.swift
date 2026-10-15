@@ -1571,6 +1571,9 @@ public final class EventMonitor {
                 } else {
                     resetSession(reason: "Replacement Resync", clearPhraseContext: false)
                 }
+            } else if !skipEventPosting,
+                      result.commitKind == .verifiedCommit || result.commitKind == .blindCommit {
+                CorrectionSoundPlayer.shared.playIfEnabled()
             }
             return result
         } catch {
