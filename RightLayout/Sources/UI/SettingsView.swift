@@ -131,9 +131,7 @@ private struct OverviewPane: View {
                         StatusChip(title: "Granted", severity: .info)
                     } else {
                         Button {
-                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                                NSWorkspace.shared.open(url)
-                            }
+                            SandboxPermissionManager.shared.requestAccessibilityPermission()
                         } label: {
                             Text("Grant access", bundle: settings.resourceBundle)
                         }

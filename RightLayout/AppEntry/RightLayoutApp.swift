@@ -3,6 +3,7 @@ import AppKit
 import os
 import UserNotifications
 import Carbon
+import ApplicationServices
 import RightLayout
 
 extension Logger {
@@ -125,17 +126,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let monitor = EventMonitor(engine: engine)
         self.eventMonitor = monitor
         
-        // Check permissions
-        // Check permissions
+        // Without Accessibility access, creating the event tap makes macOS show its own
+        // permission alert on top of our window. Explain first; the monitor starts once
+        // access is granted.
         let skipPermissionCheck = ProcessInfo.processInfo.environment["RightLayout_SKIP_PERMISSION_CHECK"] != nil
         if !skipPermissionCheck && !SandboxPermissionManager.shared.checkAccessibilityPermission() {
             Logger.app.warning("Accessibility permission missing on launch")
             openPermissionWindow()
-        }
-        
-        Task {
-            Logger.app.info("Starting EventMonitor from AppDelegate")
-            await monitor.start()
+            watchForAccessibilityPermission()
+        } else {
+            Task {
+                Logger.app.info("Starting EventMonitor from AppDelegate")
+                await monitor.start()
+            }
         }
         
         // Setup update checking
@@ -172,8 +175,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.permissionWindowController = controller
     }
 
+    /// macOS doesn't notify the app when access is granted, so check periodically,
+    /// also after the permission window has been closed.
+    private func watchForAccessibilityPermission() {
+        Task { @MainActor [weak self] in
+            while !AXIsProcessTrusted() {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard self != nil else { return }
+            }
+            self?.accessibilityPermissionGranted()
+        }
+    }
+
     /// The event tap can't be created without Accessibility access, so the monitor
-    /// started at launch is idle. Start it now instead of requiring a restart.
+    /// isn't running yet. Start it now instead of requiring a restart.
     private func accessibilityPermissionGranted() {
         guard !isHandlingPermissionGrant else { return }
         isHandlingPermissionGrant = true

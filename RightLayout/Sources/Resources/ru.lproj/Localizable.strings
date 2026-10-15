@@ -302,7 +302,7 @@
 "Without Accessibility access, automatic correction, manual last-word correction, and diagnostics for live typing remain blocked." = "Без доступа Accessibility автоматическое исправление, ручное исправление последнего слова и диагностика ввода в реальном времени остаются заблокированными.";
 "What to do" = "Что сделать";
 "Grant access once, then return here and confirm the status." = "Выдайте доступ один раз, затем вернитесь сюда и подтвердите статус.";
-"1. Open System Settings → Privacy & Security → Accessibility" = "1. Откройте Системные настройки → Конфиденциальность и безопасность → Accessibility";
+"1. Click “Grant access”, then “Open System Settings” in the macOS dialog" = "1. Нажмите «Выдать доступ», затем «Открыть Системные настройки» в окне macOS";
 "2. Enable the switch next to RightLayout" = "2. Включите переключатель рядом с RightLayout";
 "3. If macOS asks, quit and reopen the app" = "3. Если macOS попросит, закройте и снова откройте приложение";
 "Open Accessibility Settings" = "Открыть настройки Accessibility";

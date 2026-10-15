@@ -302,7 +302,7 @@
 "Without Accessibility access, automatic correction, manual last-word correction, and diagnostics for live typing remain blocked." = "Without Accessibility access, automatic correction, manual last-word correction, and diagnostics for live typing remain blocked.";
 "What to do" = "What to do";
 "Grant access once, then return here and confirm the status." = "Grant access once, then return here and confirm the status.";
-"1. Open System Settings → Privacy & Security → Accessibility" = "1. Open System Settings → Privacy & Security → Accessibility";
+"1. Click “Grant access”, then “Open System Settings” in the macOS dialog" = "1. Click “Grant access”, then “Open System Settings” in the macOS dialog";
 "2. Enable the switch next to RightLayout" = "2. Enable the switch next to RightLayout";
 "3. If macOS asks, quit and reopen the app" = "3. If macOS asks, quit and reopen the app";
 "Open Accessibility Settings" = "Open Accessibility Settings";
