@@ -80,7 +80,7 @@ actor ConfidenceRouter {
         let enabledLanguages = await settings.enabledLanguages
         var decision = await route(token: token, context: context, mode: mode)
 
-        let kind = tokenKind(for: token)
+        var kind = tokenKind(for: token)
         let fallbackCandidate = scoredDecision(
             token: token,
             activeLayouts: activeLayouts,
@@ -96,6 +96,12 @@ actor ConfidenceRouter {
         }
 
         let convertedText = convertedText(for: token, decision: decision, activeLayouts: activeLayouts)
+        // A word with sentence punctuation stuck to it ("Вщту!" → "Done!") is decided
+        // like the word itself.
+        if kind == .punctuated,
+           CorrectionDecisionPolicy.isWordWithEdgePunctuation(original: token, converted: convertedText) {
+            kind = token.filter(\.isLetter).count <= 3 ? .short : .plain
+        }
         let rankedCandidates = rankedEvidenceCandidates(for: decision)
         let primaryCandidate = rankedCandidates.first ?? DecisionEvidenceCandidate(
             hypothesis: decision.layoutHypothesis,

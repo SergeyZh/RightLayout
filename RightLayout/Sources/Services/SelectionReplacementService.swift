@@ -71,6 +71,10 @@ final class SelectionReplacementService {
 
     private let restoreClipboardDelay: UInt64 = 180_000_000
 
+    /// Apps that report AX text writes as successful but keep their text unchanged.
+    /// Their text is still readable, so it is replaced by verified retyping instead.
+    private var axWriteIgnoringBundleIds: Set<String> = []
+
     init(eventPoster: EventPosting = CGEventPoster()) {
         self.eventPoster = eventPoster
     }
@@ -95,6 +99,10 @@ final class SelectionReplacementService {
            let snapshot = request.snapshot,
            let verifiedRange = request.verifiedRange,
            canReplaceViaAX(snapshot: snapshot, verifiedRange: verifiedRange, expectedOriginal: request.expectedOriginal) {
+            if prefersVerifiedReplay(snapshot) {
+                lastStrategy = .eventReplayTransaction
+                return await replaceViaVerifiedReplay(request: request, verifiedRange: verifiedRange, proxy: proxy)
+            }
             return try await replaceViaAX(
                 request: request,
                 snapshot: snapshot,
@@ -252,6 +260,12 @@ final class SelectionReplacementService {
             )
         }
 
+        // Where the caret really is now; the host may have caught up with keystrokes
+        // typed after the text was verified.
+        let caretBeforeWrite = snapshot.source == .accessibility
+            ? FocusedTextContextService.shared.snapshotFocusedText()?.selectedRange
+            : nil
+
         if snapshot.capabilities.supportsSelectedRangeWrite,
            snapshot.capabilities.supportsSelectedTextWrite,
            replaceSelectedRange(
@@ -263,6 +277,26 @@ final class SelectionReplacementService {
             let postVerified = postSnapshot.map { post in
                 substring(in: post.fullText, range: NSRange(location: verifiedRange.location, length: request.replacement.utf16.count)) == request.replacement
             } ?? (snapshot.source == .accessibilityPartial && request.intent == .manualSelection)
+
+            if !postVerified,
+               let postSnapshot,
+               let caretBeforeWrite,
+               let bundleId = snapshot.bundleId,
+               let unchanged = substring(in: postSnapshot.fullText, range: verifiedRange),
+               FocusedTextContextService.comparable(unchanged) == FocusedTextContextService.comparable(request.expectedOriginal) {
+                // The write was reported as done, but the text is unchanged (Slack and
+                // other Chromium-based apps do this). Retype it, now and from now on.
+                logger.info("AX text write ignored by \(bundleId, privacy: .public); switching to verified retyping")
+                axWriteIgnoringBundleIds.insert(bundleId)
+                setSelectedRange(element: snapshot.element, range: caretBeforeWrite)
+                lastStrategy = .eventReplayTransaction
+                return await replaceViaVerifiedReplay(
+                    request: request,
+                    verifiedRange: verifiedRange,
+                    proxy: proxy,
+                    expectedCaret: caretBeforeWrite
+                )
+            }
 
             lastStrategy = .axSelectedTextReplace
             return TextEditResult(
@@ -395,6 +429,115 @@ final class SelectionReplacementService {
         }
 
         return true
+    }
+
+    @discardableResult
+    private func setSelectedRange(element: AXUIElement, range: NSRange) -> Bool {
+        var cfRange = CFRange(location: range.location, length: range.length)
+        guard let axRange = AXValueCreate(.cfRange, &cfRange) else { return false }
+        return AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, axRange) == .success
+    }
+
+    /// Readable text that can't be written through AX: Chromium-based apps (their AX
+    /// text writes are dropped) and apps seen ignoring a write.
+    private func prefersVerifiedReplay(_ snapshot: FocusedTextSnapshot) -> Bool {
+        guard snapshot.source == .accessibility,
+              snapshot.capabilities.supportsFullTextRead,
+              let bundleId = snapshot.bundleId else {
+            return false
+        }
+        return axWriteIgnoringBundleIds.contains(bundleId)
+            || HostRuntimeProfile.isKnownGoodBlindBundleId(bundleId)
+    }
+
+    /// Replaces the verified text by deleting and retyping it, then reads the field back.
+    ///
+    /// The field is read again first: the host may have caught up with keystrokes typed
+    /// after the text was verified (usually the separator), which are retyped as well.
+    /// If the caret isn't right after the verified text (or that short tail), or the
+    /// text has changed, nothing is typed.
+    private func replaceViaVerifiedReplay(
+        request: TextEditRequest,
+        verifiedRange: NSRange,
+        proxy: CGEventTapProxy?,
+        expectedCaret: NSRange? = nil
+    ) async -> TextEditResult {
+        let aborted = TextEditResult(
+            strategy: .eventReplayTransaction,
+            appliedText: request.expectedOriginal,
+            caretRange: nil,
+            postVerified: false,
+            needsResync: true,
+            commitKind: .aborted
+        )
+
+        let service = FocusedTextContextService.shared
+        guard let current = service.snapshotFocusedText(),
+              FocusedTextContextService.comparable(substring(in: current.fullText, range: verifiedRange) ?? "")
+                == FocusedTextContextService.comparable(request.expectedOriginal) else {
+            return aborted
+        }
+
+        let selection = current.selectedRange
+        if let expectedCaret, selection != expectedCaret {
+            return aborted
+        }
+
+        let deleteCount: Int
+        let tail: String
+        if selection == verifiedRange, selection.length > 0 {
+            // The text is selected: typing replaces it.
+            deleteCount = 0
+            tail = ""
+        } else {
+            let end = NSMaxRange(verifiedRange)
+            guard selection.length == 0, selection.location >= end else { return aborted }
+            guard let typedSince = substring(in: current.fullText, range: NSRange(location: end, length: selection.location - end)),
+                  typedSince.count <= 4,
+                  !typedSince.contains(where: \.isNewline) else {
+                return aborted
+            }
+            tail = typedSince
+            deleteCount = request.expectedOriginal.count + tail.count
+        }
+
+        trace.log(
+            .replacementStarted,
+            fields: [
+                "strategy": "verified_replay",
+                "intent": request.intent.rawValue,
+                "host_profile": request.hostRuntimeProfile.rawValue
+            ]
+        )
+
+        let timing = request.hostRuntimeProfile.replayTimingProfile
+        for _ in 0..<deleteCount {
+            eventPoster.postKeyEvent(keyCode: 0x33, flags: [], proxy: proxy)
+            try? await Task.sleep(nanoseconds: timing.deleteDelay)
+        }
+        let typed = request.replacement + tail
+        for character in typed {
+            eventPoster.postUnicodeString(String(character), proxy: proxy)
+            try? await Task.sleep(nanoseconds: timing.insertDelay)
+        }
+
+        // The host updates its AX text asynchronously; give it a moment.
+        for attempt in 0..<5 {
+            try? await Task.sleep(nanoseconds: attempt == 0 ? timing.postApplyDelay : 30_000_000)
+            if case .verified(let context) = service.verifyExpectedSuffix(typed, revision: request.sessionRevision) {
+                return TextEditResult(
+                    strategy: .eventReplayTransaction,
+                    appliedText: request.replacement,
+                    caretRange: NSRange(location: NSMaxRange(context.verifiedRange), length: 0),
+                    postVerified: true,
+                    needsResync: false,
+                    commitKind: .verifiedCommit
+                )
+            }
+        }
+
+        logger.warning("Retyped text could not be verified")
+        return aborted
     }
 
     private func replaceViaClipboardSelection(
@@ -624,7 +767,8 @@ final class SelectionReplacementService {
         }
 
         if snapshot.capabilities.supportsFullTextRead,
-           substring(in: snapshot.fullText, range: verifiedRange) == expectedOriginal {
+           let current = substring(in: snapshot.fullText, range: verifiedRange),
+           FocusedTextContextService.comparable(current) == FocusedTextContextService.comparable(expectedOriginal) {
             return snapshot.capabilities.supportsSelectedRangeWrite || snapshot.capabilities.supportsValueWrite
         }
 
