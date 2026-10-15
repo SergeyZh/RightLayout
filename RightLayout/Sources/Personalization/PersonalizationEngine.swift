@@ -4,7 +4,7 @@ import os.log
 /// "Strategy A": Contextual Priors Adapter.
 /// Adjusts the confidence of the correction candidate based on historic user behavior in the current app context.
 actor PersonalizationEngine {
-    private let logger = Logger(subsystem: "com.chernistry.rightlayout", category: "Personalization")
+    private let logger = Logger(subsystem: "com.sergeyzh.rightlayout", category: "Personalization")
     
     // MARK: - Dependencies
     

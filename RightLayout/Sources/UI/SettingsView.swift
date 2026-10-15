@@ -22,7 +22,7 @@ public struct SettingsView: View {
                 .tag(pane)
             }
             .listStyle(.sidebar)
-            .navigationTitle("RightLayout")
+            .navigationTitle(AppIdentity.displayName)
         } detail: {
             Group {
                 if !searchText.isEmpty {
@@ -759,14 +759,23 @@ private struct AboutPane: View {
                 }
             }
 
+            WorkbenchSection(title: "Authorship", detail: nil) {
+                Text(UIStrings.text("RightLayout SergeyZh is SergeyZh's build of RightLayout: a fork of RightLayout by Alex Chernysh, not the official RightLayout app."))
+                    .font(Theme.Typography.body())
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Link(destination: URL(string: "https://github.com/chernistry/RightLayout")!) {
+                    Text("Original RightLayout project", bundle: settings.resourceBundle)
+                }
+            }
+
             WorkbenchSection(title: "Support and links", detail: "Operational links, not marketing pathways.") {
-                Link(destination: URL(string: "https://github.com/chernistry/rightlayout")!) {
+                Link(destination: AppIdentity.repositoryURL) {
                     Text("GitHub Repository", bundle: settings.resourceBundle)
                 }
-                Link(destination: URL(string: "https://github.com/chernistry/rightlayout/releases")!) {
+                Link(destination: AppIdentity.repositoryURL.appendingPathComponent("releases")) {
                     Text("Release Notes", bundle: settings.resourceBundle)
                 }
-                Link(destination: URL(string: "https://github.com/chernistry/rightlayout/issues")!) {
+                Link(destination: AppIdentity.repositoryURL.appendingPathComponent("issues")) {
                     Text("Report a Bug", bundle: settings.resourceBundle)
                 }
             }

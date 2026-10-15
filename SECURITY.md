@@ -18,9 +18,9 @@ All processing happens locally on your machine. Your keystrokes never leave your
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in RightLayout, please report it privately:
+If you discover a security vulnerability in RightLayout SergeyZh (SergeyZh's build of RightLayout), please report it privately:
 
-1. Open a [GitHub Security Advisory](https://github.com/chernistry/RightLayout/security/advisories/new)
+1. Open a [GitHub Security Advisory](https://github.com/SergeyZh/RightLayout/security/advisories/new)
 2. Or contact the maintainer directly
 
 Please include:

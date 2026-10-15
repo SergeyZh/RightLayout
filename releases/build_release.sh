@@ -4,7 +4,12 @@ set -e
 # RightLayout Release Builder
 # Creates .app bundle and .pkg installer for distribution
 
-APP_NAME="RightLayout"
+# This is a fork of RightLayout; it ships under its own name and bundle identifier
+# (see TRADEMARKS.md). The executable keeps the upstream name so scripts still find it.
+APP_NAME="RightLayout SergeyZh"
+EXECUTABLE_NAME="RightLayout"
+BUNDLE_ID="com.sergeyzh.rightlayout"
+PKG_BASENAME="RightLayout-SergeyZh"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -17,7 +22,7 @@ fi
 
 BUILD_DIR="$SCRIPT_DIR/build"
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
-PKG_PATH="$SCRIPT_DIR/$APP_NAME-$VERSION.pkg"
+PKG_PATH="$SCRIPT_DIR/$PKG_BASENAME-$VERSION.pkg"
 
 echo "🚀 Building $APP_NAME v$VERSION"
 echo "================================"
@@ -59,7 +64,10 @@ mkdir -p "$APP_PATH/Contents/MacOS"
 mkdir -p "$APP_PATH/Contents/Resources"
 
 # Copy binary
-cp "$BINARY_PATH" "$APP_PATH/Contents/MacOS/$APP_NAME"
+cp "$BINARY_PATH" "$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
+
+# Apache-2.0 §4: ship the license and attribution notices with the app
+cp "$PROJECT_DIR/LICENSE" "$PROJECT_DIR/NOTICE" "$APP_PATH/Contents/Resources/"
 
 # Copy resource bundle (required by Swift Package Manager)
 BUNDLE_PATH="$PROJECT_DIR/.build/release/RightLayout_RightLayout.bundle"
@@ -96,13 +104,13 @@ cat > "$APP_PATH/Contents/Info.plist" <<EOF
     <key>CFBundleDisplayName</key>
     <string>$APP_NAME</string>
     <key>CFBundleIdentifier</key>
-    <string>com.chernistry.rightlayout</string>
+    <string>$BUNDLE_ID</string>
     <key>CFBundleVersion</key>
     <string>$VERSION</string>
     <key>CFBundleShortVersionString</key>
     <string>$VERSION</string>
     <key>CFBundleExecutable</key>
-    <string>$APP_NAME</string>
+    <string>$EXECUTABLE_NAME</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
@@ -111,6 +119,8 @@ cat > "$APP_PATH/Contents/Info.plist" <<EOF
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2024–2025 Alex Chernysh. Modifications copyright © 2026 SergeyZh. Licensed under the Apache License 2.0.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>LSApplicationCategoryType</key>
@@ -128,9 +138,9 @@ rm -f "$PKG_PATH"
 # Build pkg - app goes directly to /Applications
 pkgbuild \
     --root "$APP_PATH" \
-    --identifier "com.chernistry.rightlayout" \
+    --identifier "$BUNDLE_ID" \
     --version "$VERSION" \
-    --install-location "/Applications/RightLayout.app" \
+    --install-location "/Applications/$APP_NAME.app" \
     --scripts "$SCRIPT_DIR/pkg_scripts" \
     "$PKG_PATH"
 
@@ -148,7 +158,7 @@ if [ "$2" = "--publish" ] || [ "$1" = "--publish" ]; then
     echo ""
     echo "🚀 Publishing to GitHub..."
     
-    RELEASES_REPO="chernistry/RightLayout"
+    RELEASES_REPO="SergeyZh/RightLayout"
     TAG="v$VERSION"
     
     # Check if release already exists
@@ -160,14 +170,16 @@ if [ "$2" = "--publish" ] || [ "$1" = "--publish" ]; then
     # Create release with PKG
     gh release create "$TAG" "$PKG_PATH" \
         --repo "$RELEASES_REPO" \
-        --title "RightLayout $TAG" \
-        --notes "## RightLayout $TAG
+        --title "$APP_NAME $TAG" \
+        --notes "## $APP_NAME $TAG
+
+SergeyZh's build of RightLayout — a fork of [RightLayout](https://github.com/chernistry/RightLayout) by Alex Chernysh, not the official app.
 
 Download and run the installer.
 
 **Requirements:** macOS 13.0+
 
-**Feedback:** [GitHub Issues](https://github.com/chernistry/RightLayout/issues)"
+**Feedback:** [GitHub Issues](https://github.com/SergeyZh/RightLayout/issues)"
     
     echo "✅ Published to https://github.com/$RELEASES_REPO/releases/tag/$TAG"
 fi

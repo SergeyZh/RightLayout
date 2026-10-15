@@ -60,7 +60,7 @@ struct TextEditResult: @unchecked Sendable {
 final class SelectionReplacementService {
     static let shared = SelectionReplacementService()
 
-    private let logger = Logger(subsystem: "com.chernistry.rightlayout", category: "SelectionReplacement")
+    private let logger = Logger(subsystem: "com.sergeyzh.rightlayout", category: "SelectionReplacement")
     private let eventPoster: EventPosting
     private let trace = RuntimeTraceLogger.shared
 
@@ -420,7 +420,7 @@ final class SelectionReplacementService {
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.setString(request.replacement, forType: .string)
-            pasteboard.setString(sentinel, forType: NSPasteboard.PasteboardType("com.chernistry.rightlayout.sentinel"))
+            pasteboard.setString(sentinel, forType: NSPasteboard.PasteboardType("com.sergeyzh.rightlayout.sentinel"))
         }
 
         eventPoster.postShortcut(keyCode: 9, flags: .maskCommand, proxy: proxy)
@@ -599,7 +599,7 @@ final class SelectionReplacementService {
             try? await Task.sleep(nanoseconds: restoreClipboardDelay)
             await MainActor.run {
                 let pasteboard = NSPasteboard.general
-                let markerType = NSPasteboard.PasteboardType("com.chernistry.rightlayout.sentinel")
+                let markerType = NSPasteboard.PasteboardType("com.sergeyzh.rightlayout.sentinel")
                 guard pasteboard.string(forType: markerType) == sentinel else { return }
                 snapshot.restore(to: pasteboard)
             }

@@ -24,7 +24,7 @@ private struct RiskCalibrationStore: Codable, Sendable {
 
 actor RiskController {
     private var states: [ContextKey: RiskState] = [:]
-    private let logger = Logger(subsystem: "com.chernistry.rightlayout", category: "RiskController")
+    private let logger = Logger(subsystem: "com.sergeyzh.rightlayout", category: "RiskController")
     private let fileURL: URL
 
     private let minEvidenceForAuto = 4.0
@@ -55,7 +55,7 @@ actor RiskController {
             try? fileManager.removeItem(at: storeDir.appendingPathComponent("risk_calibration.json"))
         } else {
             let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            storeDir = appSupport.appendingPathComponent("com.chernistry.rightlayout/Personalization")
+            storeDir = appSupport.appendingPathComponent("com.sergeyzh.rightlayout/Personalization")
         }
         self.fileURL = storeDir.appendingPathComponent("risk_calibration.json")
         self.states = Self.loadStates(from: fileURL, logger: logger)

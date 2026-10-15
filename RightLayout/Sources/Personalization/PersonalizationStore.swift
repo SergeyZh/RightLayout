@@ -43,9 +43,9 @@ public actor PersonalizationStore {
         } else if Self.isRunningTests {
             storeDir = fileManager.temporaryDirectory.appendingPathComponent("rightlayout_personalization_tests", isDirectory: true)
         } else {
-            // Construct path: ~/Library/Application Support/com.chernistry.rightlayout/Personalization/store.json
+            // Construct path: ~/Library/Application Support/com.sergeyzh.rightlayout/Personalization/store.json
             let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            let appDir = appSupport.appendingPathComponent("com.chernistry.rightlayout")
+            let appDir = appSupport.appendingPathComponent("com.sergeyzh.rightlayout")
             storeDir = appDir.appendingPathComponent("Personalization")
         }
         self.fileURL = storeDir.appendingPathComponent("store.json")

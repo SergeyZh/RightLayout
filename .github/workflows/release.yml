@@ -76,19 +76,19 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG="v$VERSION"
-          PKG_PATH="releases/RightLayout-$VERSION.pkg"
-          RELEASES_REPO="chernistry/RightLayout"
+          PKG_PATH="releases/RightLayout-SergeyZh-$VERSION.pkg"
+          RELEASES_REPO="SergeyZh/RightLayout"
           NOTES_PATH="releases/notes/$TAG.md"
 
           if [ -f "$NOTES_PATH" ]; then
             NOTES_ARGS=(--notes-file "$NOTES_PATH")
           else
-            NOTES_ARGS=(--notes "RightLayout $TAG. Download and run the installer. macOS 13.0+ required.")
+            NOTES_ARGS=(--notes "RightLayout SergeyZh $TAG — SergeyZh's build of RightLayout (a fork of chernistry/RightLayout, not the official app). Download and run the installer. macOS 13.0+ required.")
           fi
           
           gh release create "$TAG" "$PKG_PATH" \
             --repo "$RELEASES_REPO" \
-            --title "RightLayout $TAG" \
+            --title "RightLayout SergeyZh $TAG" \
             "${NOTES_ARGS[@]}"
           
           echo "✅ Published to https://github.com/$RELEASES_REPO/releases/tag/$TAG"

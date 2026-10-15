@@ -17,7 +17,7 @@ private struct TrackedTransaction: Sendable {
 }
 
 actor FeedbackCollector {
-    private let logger = Logger(subsystem: "com.chernistry.rightlayout", category: "OutcomeTracker")
+    private let logger = Logger(subsystem: "com.sergeyzh.rightlayout", category: "OutcomeTracker")
 
     private var pendingTransactions: [UUID: TrackedTransaction] = [:]
     private let pendingWindow: TimeInterval = 60.0

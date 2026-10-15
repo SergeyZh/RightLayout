@@ -53,7 +53,7 @@ SWITCH_LAYOUT = ROOT_DIR / "scripts/switch_layout"
 
 KEY_OPTION, KEY_DELETE, KEY_SPACE, KEY_TAB, KEY_RETURN, KEY_F10 = 58, 51, 49, 48, 36, 109
 KEY_ESC = 53
-BUNDLE_ID = "com.chernistry.rightlayout"
+BUNDLE_ID = "com.sergeyzh.rightlayout"
 APP_NAME = "RightLayout"
 TEST_HOST_NAME = "RightLayoutTestHost"
 TEST_HOST_BIN = ROOT_DIR / ".build" / "debug" / TEST_HOST_NAME

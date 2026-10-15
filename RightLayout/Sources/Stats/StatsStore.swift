@@ -7,7 +7,7 @@ import CryptoKit
 actor StatsStore {
     static let shared = StatsStore()
     
-    private let logger = Logger(subsystem: "com.chernistry.rightlayout", category: "StatsStore")
+    private let logger = Logger(subsystem: "com.sergeyzh.rightlayout", category: "StatsStore")
     private let fileManager = FileManager.default
     
     private var state: StatsState = StatsState()
@@ -23,7 +23,7 @@ actor StatsStore {
             self.storageUrl = custom.appendingPathComponent("stats_v1.json")
         } else {
             let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            let dir = appSupport.appendingPathComponent("com.chernistry.rightlayout/Stats")
+            let dir = appSupport.appendingPathComponent("com.sergeyzh.rightlayout/Stats")
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: nil)
             self.storageUrl = dir.appendingPathComponent("stats_v1.json")
         }
