@@ -402,3 +402,14 @@
 "Reset Permission" = "Reset Permission";
 "The old entry was removed. Enable RightLayout in the list that opens." = "The old entry was removed. Enable RightLayout in the list that opens.";
 "Could not reset automatically. Run this in Terminal, then reopen RightLayout:" = "Could not reset automatically. Run this in Terminal, then reopen RightLayout:";
+"Automatic correction limits" = "Automatic correction limits";
+"What gets fixed on its own. Anything outside these limits is still one double-tap of Option away." = "What gets fixed on its own. Anything outside these limits is still one double-tap of Option away.";
+"Minimum word length" = "Minimum word length";
+"Shorter words are only corrected with the hotkey. Short words are ambiguous, so they still need high confidence." = "Shorter words are only corrected with the hotkey. Short words are ambiguous, so they still need high confidence.";
+"Letters: %d" = "Letters: %d";
+"Confidence in apps without Accessibility" = "Confidence in apps without Accessibility";
+"Claude, Slack, VS Code and other Electron apps don't expose their text, so the word is retyped without checking it first. Lower means more corrections, higher means fewer mistakes. The correction style shifts this by ±6%." = "Claude, Slack, VS Code and other Electron apps don't expose their text, so the word is retyped without checking it first. Lower means more corrections, higher means fewer mistakes. The correction style shifts this by ±6%.";
+"Maximum pause before retyping" = "Maximum pause before retyping";
+"In those apps a word isn't retyped if this much time has passed since the last keystroke, so the retype can't land somewhere you moved to." = "In those apps a word isn't retyped if this much time has passed since the last keystroke, so the retype can't land somewhere you moved to.";
+"%.2f s" = "%.2f s";
+"Restore defaults" = "Restore defaults";
