@@ -493,8 +493,16 @@ final class SelectionReplacementService {
 
         try? await Task.sleep(nanoseconds: replayProfile.postApplyDelay)
 
-        let verification = await MainActor.run {
-            FocusedTextContextService.shared.verifyExpectedSuffix(request.replacement, revision: request.sessionRevision)
+        // Only hosts with a real editable AX field can confirm the result. Elsewhere (e.g.
+        // a terminal's screen buffer) a read-back can "mismatch" a successful replay and
+        // trigger a bogus rollback.
+        let verification: SessionSyncResult
+        if request.hostRuntimeProfile.editingEnvironment == .accessibility {
+            verification = await MainActor.run {
+                FocusedTextContextService.shared.verifyExpectedSuffix(request.replacement, revision: request.sessionRevision)
+            }
+        } else {
+            verification = .unavailable
         }
         switch verification {
         case .verified(let context):
