@@ -24,6 +24,8 @@ public final class EventMonitor {
         var isPressed = false
         var isStandaloneCandidate = false
         var lastStandaloneReleaseAt: Date?
+        /// Trigger key of the current/last tap; both taps must use the same key.
+        var keyCode: CGKeyCode?
     }
 
     private struct CommittedTokenContext {
@@ -437,10 +439,8 @@ public final class EventMonitor {
         let flags = event.flags
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
 
-        if settings.hotkeyEnabled,
-           settings.manualTriggerMode == .doubleTapOption,
-           keyCode == settings.manualTriggerOptionKeyCode {
-            handleOptionFlagsChanged(flags: flags)
+        if settings.hotkeyEnabled, let triggerMask = manualTriggerModifierMask(forKeyCode: keyCode) {
+            handleManualTriggerFlagsChanged(keyCode: keyCode, flags: flags, modifierMask: triggerMask)
             return Unmanaged.passUnretained(event)
         }
 
@@ -455,16 +455,46 @@ public final class EventMonitor {
         return Unmanaged.passUnretained(event)
     }
 
-    private func handleOptionFlagsChanged(flags: CGEventFlags) {
+    /// Modifier flag of the configured manual trigger key, if `keyCode` is one.
+    private func manualTriggerModifierMask(forKeyCode keyCode: CGKeyCode) -> CGEventFlags? {
+        let mode = settings.manualTriggerMode
+        if mode.usesOption, keyCode == settings.manualTriggerOptionKeyCode {
+            return .maskAlternate
+        }
+        if mode.usesShift, keyCode == settings.manualTriggerShiftKeyCode {
+            return .maskShift
+        }
+        return nil
+    }
+
+    /// Whether the modifier key `keyCode` itself is down, telling the left and right
+    /// keys apart (holding the other Shift must not look like a press of this one).
+    private static func isModifierKeyDown(keyCode: CGKeyCode, flags: CGEventFlags, modifierMask: CGEventFlags) -> Bool {
+        // NX_DEVICE{L,R}{SHIFT,ALT}KEYMASK
+        let deviceBits: [CGKeyCode: UInt64] = [56: 0x02, 60: 0x04, 58: 0x20, 61: 0x40]
+        let pairBits: UInt64 = modifierMask == .maskShift ? 0x06 : 0x60
+        guard let bit = deviceBits[keyCode], flags.rawValue & pairBits != 0 || !flags.contains(modifierMask) else {
+            // Synthetic events may carry only the generic flag.
+            return flags.contains(modifierMask)
+        }
+        return flags.rawValue & bit != 0
+    }
+
+    private func handleManualTriggerFlagsChanged(keyCode: CGKeyCode, flags: CGEventFlags, modifierMask: CGEventFlags) {
         let now = timeProvider.now
 
-        if flags.contains(.maskAlternate) {
+        if Self.isModifierKeyDown(keyCode: keyCode, flags: flags, modifierMask: modifierMask) {
+            if manualTriggerState.keyCode != keyCode {
+                // A tap of a different trigger key doesn't pair with the previous one.
+                manualTriggerState.lastStandaloneReleaseAt = nil
+            }
+            manualTriggerState.keyCode = keyCode
             manualTriggerState.isPressed = true
             manualTriggerState.isStandaloneCandidate = true
             return
         }
 
-        guard manualTriggerState.isPressed else { return }
+        guard manualTriggerState.isPressed, manualTriggerState.keyCode == keyCode else { return }
         manualTriggerState.isPressed = false
 
         guard manualTriggerState.isStandaloneCandidate else {

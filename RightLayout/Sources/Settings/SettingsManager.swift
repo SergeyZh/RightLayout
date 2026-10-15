@@ -30,8 +30,18 @@ public final class SettingsManager: ObservableObject {
 
     public enum ManualTriggerMode: String, CaseIterable, Identifiable {
         case doubleTapOption
+        case doubleTapShift
+        case doubleTapOptionOrShift
 
         public var id: String { rawValue }
+
+        public var usesOption: Bool {
+            self == .doubleTapOption || self == .doubleTapOptionOrShift
+        }
+
+        public var usesShift: Bool {
+            self == .doubleTapShift || self == .doubleTapOptionOrShift
+        }
     }
 
     public enum ManualTriggerOptionSide: String, CaseIterable, Identifiable {
@@ -40,12 +50,23 @@ public final class SettingsManager: ObservableObject {
 
         public var id: String { rawValue }
 
+        /// Option key on this side.
         public var keyCode: UInt16 {
             switch self {
             case .left:
                 return 58
             case .right:
                 return 61
+            }
+        }
+
+        /// Shift key on this side.
+        public var shiftKeyCode: UInt16 {
+            switch self {
+            case .left:
+                return 56
+            case .right:
+                return 60
             }
         }
     }
@@ -383,6 +404,10 @@ public final class SettingsManager: ObservableObject {
 
     public var manualTriggerOptionKeyCode: UInt16 {
         manualTriggerOptionSide.keyCode
+    }
+
+    public var manualTriggerShiftKeyCode: UInt16 {
+        manualTriggerOptionSide.shiftKeyCode
     }
 
     public var manualTriggerDoubleTapWindow: TimeInterval {
