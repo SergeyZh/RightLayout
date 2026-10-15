@@ -259,6 +259,8 @@ private struct GeneralPane: View {
                 )
             }
 
+            CorrectionSoundSection()
+
             AutoCorrectionLimitsSection()
 
             WorkbenchSection(title: "Language bias", detail: "Tie-breakers should be explicit so ambiguous tokens never feel random.") {
@@ -314,6 +316,74 @@ private struct GeneralPane: View {
                     .buttonStyle(.plain)
                     .secondaryActionButton()
                 }
+            }
+        }
+    }
+}
+
+private struct CorrectionSoundSection: View {
+    @ObservedObject private var settings = SettingsManager.shared
+
+    var body: some View {
+        WorkbenchSection(
+            title: "Sound",
+            detail: "A short, quiet sound each time a word is corrected, automatically or with the trigger key."
+        ) {
+            SettingsToggleRow(
+                title: "Play a sound on correction",
+                detail: "Lets you notice a correction without looking at the text.",
+                isOn: $settings.correctionSoundEnabled
+            )
+
+            Divider()
+
+            SummaryRow(title: "Sound", detail: "Choosing a sound plays it.") {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Picker("", selection: $settings.correctionSound) {
+                        ForEach(SettingsManager.CorrectionSound.allCases) { sound in
+                            Text(LocalizedStringKey(sound.displayName), bundle: settings.resourceBundle).tag(sound)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 140)
+                    .onChange(of: settings.correctionSound) { sound in
+                        CorrectionSoundPlayer.shared.play(sound)
+                    }
+
+                    Button {
+                        CorrectionSoundPlayer.shared.play(settings.correctionSound)
+                    } label: {
+                        Image(systemName: "play.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .secondaryActionButton()
+                    .help(UIStrings.text("Play"))
+                }
+                .disabled(!settings.correctionSoundEnabled)
+            }
+
+            Divider()
+
+            SummaryRow(title: "Volume", detail: "Relative to the system volume.") {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Slider(
+                        value: $settings.correctionSoundVolume,
+                        in: SettingsManager.correctionSoundVolumeRange,
+                        step: 0.05,
+                        onEditingChanged: { editing in
+                            if !editing {
+                                CorrectionSoundPlayer.shared.play(settings.correctionSound)
+                            }
+                        }
+                    )
+                    .frame(width: 140)
+                    Text("\(Int((settings.correctionSoundVolume * 100).rounded()))%")
+                        .font(Theme.Typography.body())
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .trailing)
+                }
+                .disabled(!settings.correctionSoundEnabled)
             }
         }
     }
