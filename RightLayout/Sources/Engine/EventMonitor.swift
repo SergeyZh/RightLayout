@@ -666,7 +666,9 @@ public final class EventMonitor {
         let focusedCapabilities = textContextService.resolveFocusedElementCapabilities()
         let bundleId = focusedCapabilities?.bundleId ?? lastActiveApp
         let hostProfile = currentHostRuntimeProfile(bundleId: bundleId, capabilities: focusedCapabilities?.capabilities)
-        let canVerifyText = isSyntheticHost || focusedCapabilities?.capabilities.supportsFullTextRead == true
+        let canVerifyText = isSyntheticHost
+            || (hostProfile.editingEnvironment == .accessibility
+                && focusedCapabilities?.capabilities.supportsFullTextRead == true)
         trace.log(
             .boundaryDetected,
             fields: [
@@ -1317,7 +1319,10 @@ public final class EventMonitor {
             return nil
         }
 
-        if let snapshot = textContextService.snapshotFocusedText() {
+        // Blind hosts (and terminals, whose AX text is the screen buffer) can't seed the
+        // session; reading them back would only cost time or mislead.
+        if hostRuntimeProfile.editingEnvironment == .accessibility,
+           let snapshot = textContextService.snapshotFocusedText() {
             applySeed(textContextService.seedSession(from: snapshot), snapshot: snapshot)
         } else {
             inputSession.typedToken = ""
@@ -1764,6 +1769,7 @@ public final class EventMonitor {
         guard expectedMutationSeq == inputSession.mutationSeq,
               activeSyntheticTransactions == 0,
               boundaryTasksInFlight == 0,
+              !HostRuntimeProfile.isTerminalBundleId(lastActiveApp),
               let snapshot = textContextService.snapshotFocusedText() else {
             return
         }
