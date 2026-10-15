@@ -1093,6 +1093,12 @@ public final class EventMonitor {
                 if switchedEarly {
                     revertInputSource(to: layoutBeforeSwitch)
                 }
+                // The word is still there as typed: let the hotkey correct it rather
+                // than "undo" a correction that never happened.
+                await engine.resetCycling()
+                if !inputSession.isDirty {
+                    lastCommittedToken = CommittedTokenContext(token: token, separator: separator)
+                }
                 return false
             }
 
@@ -1808,9 +1814,9 @@ public final class EventMonitor {
         }
 
         let trimmed = expectedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= max(1, settings.minAutoCorrectWordLength),
-              trimmed.count <= 18,
-              trimmed.allSatisfy({ $0.isLetter }) else {
+        guard let word = CorrectionDecisionPolicy.letterCore(of: trimmed),
+              word.count >= max(1, settings.minAutoCorrectWordLength),
+              word.count <= 18 else {
             return false
         }
 

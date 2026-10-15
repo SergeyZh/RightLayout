@@ -182,8 +182,8 @@ package final class FocusedTextContextService {
             return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
         }
 
-        let beforeCaret = prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location)
-        let committedText = token + separator
+        let beforeCaret = Self.comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
+        let committedText = Self.comparable(token + separator)
 
         if beforeCaret.hasSuffix(committedText) {
             let location = beforeCaret.utf16.count - committedText.utf16.count
@@ -197,7 +197,7 @@ package final class FocusedTextContextService {
             )
         }
 
-        if beforeCaret.hasSuffix(token) {
+        if beforeCaret.hasSuffix(Self.comparable(token)) {
             let location = beforeCaret.utf16.count - token.utf16.count
             let range = NSRange(location: location, length: token.utf16.count)
             return .verified(
@@ -233,7 +233,7 @@ package final class FocusedTextContextService {
             return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
         }
 
-        let beforeCaret = prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location)
+        let beforeCaret = Self.comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
         var trailingStart = beforeCaret.endIndex
         for _ in 0..<trailingCharacterCount {
             guard trailingStart > beforeCaret.startIndex else {
@@ -242,7 +242,7 @@ package final class FocusedTextContextService {
             trailingStart = beforeCaret.index(before: trailingStart)
         }
 
-        let committedText = token + separator
+        let committedText = Self.comparable(token + separator)
         let trailingText = beforeCaret[trailingStart...]
         guard beforeCaret[..<trailingStart].hasSuffix(committedText),
               !trailingText.contains(where: { $0.isWhitespace || $0.isNewline }) else {
@@ -268,8 +268,8 @@ package final class FocusedTextContextService {
             return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
         }
 
-        let beforeCaret = prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location)
-        guard beforeCaret.hasSuffix(expectedText) else {
+        let beforeCaret = Self.comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
+        guard beforeCaret.hasSuffix(Self.comparable(expectedText)) else {
             return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
         }
 
@@ -381,6 +381,12 @@ package final class FocusedTextContextService {
 
     private func elementFingerprint(element: AXUIElement, pid: pid_t, role: String?, subrole: String?) -> String {
         "\(pid):\(CFHash(element)):\(role ?? "unknown"):\(subrole ?? "unknown")"
+    }
+
+    /// Text as compared with what was typed. Web editors keep a trailing space as a
+    /// no-break space; both are one UTF-16 unit, so ranges stay valid.
+    nonisolated package static func comparable(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{00A0}", with: " ")
     }
 
     private func prefix(in text: String, utf16Length: Int) -> String {

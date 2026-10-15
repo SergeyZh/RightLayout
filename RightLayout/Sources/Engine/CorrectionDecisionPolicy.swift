@@ -119,6 +119,37 @@ private struct PolicyThresholds {
 }
 
 package enum CorrectionDecisionPolicy {
+    /// Sentence punctuation that can stick to a word without being part of it.
+    private static let edgePunctuation: Set<Character> = [
+        "!", "?", ".", ",", ":", ";", "\"", "'", "(", ")", "«", "»", "…"
+    ]
+
+    /// The letters of `text` without punctuation stuck to its edges ("Вщту!" → "Вщту"),
+    /// or nil if anything other than letters is left.
+    package static func letterCore(of text: String) -> Substring? {
+        guard let first = text.firstIndex(where: { !edgePunctuation.contains($0) }),
+              let last = text.lastIndex(where: { !edgePunctuation.contains($0) }) else {
+            return nil
+        }
+        let core = text[first...last]
+        return core.allSatisfy(\.isLetter) ? core : nil
+    }
+
+    /// Whether `original` is a word with punctuation only at its edges, and that
+    /// punctuation is still punctuation after conversion: "Вщту!" → "Done!" is, while
+    /// "ghbdtn." → "приветю" (the period is a letter key in Russian) is not.
+    package static func isWordWithEdgePunctuation(original: String, converted: String) -> Bool {
+        guard let core = letterCore(of: original),
+              core.count < original.count,
+              let convertedCore = letterCore(of: converted) else {
+            return false
+        }
+        return convertedCore.count == core.count
+            && original.distance(from: original.startIndex, to: core.startIndex)
+                == converted.distance(from: converted.startIndex, to: convertedCore.startIndex)
+            && original.count == converted.count
+    }
+
     /// Confidence an automatic correction needs in apps without readable text.
     package static func blindAutoApplyThreshold(
         preset: SettingsManager.BehaviorPreset,

@@ -32,6 +32,9 @@ SergeyZh's build of [RightLayout](https://github.com/chernistry/RightLayout) —
   left by previous builds.
 - Automatic correction in apps that don't expose their text: Electron/Chromium apps (Claude,
   Slack, VS Code…) and terminals (Terminal, iTerm2, Warp…).
+- Apps that show their text over Accessibility but ignore edits made through it (Slack and
+  other Chromium-based apps): words are retyped, and the result is checked.
+- Words with punctuation stuck to them ("Вщту!" → "Done!") are corrected automatically.
 - Short words corrected automatically; limits configurable in Settings.
 - Manual correction by double-tapping Option or Shift.
 - Enter after a word that needs fixing fixes the word and is held back, so a garbled message is
