@@ -613,8 +613,8 @@
         "desc": "Git command"
       },
       {
-        "input": "~/Library/Application Support/com.chernistry.rightlayout/Personalization/store.json",
-        "expected": "~/Library/Application Support/com.chernistry.rightlayout/Personalization/store.json",
+        "input": "~/Library/Application Support/com.sergeyzh.rightlayout/Personalization/store.json",
+        "expected": "~/Library/Application Support/com.sergeyzh.rightlayout/Personalization/store.json",
         "should_change": false,
         "desc": "Path with spaces (tilde form)"
       },

@@ -65,12 +65,12 @@ final class UpdateCheckerTests: XCTestCase {
         let json = """
         {
             "tag_name": "v1.5",
-            "html_url": "https://github.com/chernistry/rightlayout/releases/tag/v1.5",
+            "html_url": "https://github.com/SergeyZh/RightLayout/releases/tag/v1.5",
             "body": "## What's New\\n- Bug fixes\\n- Performance improvements",
             "assets": [
                 {
                     "name": "RightLayout-1.5.pkg",
-                    "browser_download_url": "https://github.com/chernistry/rightlayout/releases/download/v1.5/RightLayout-1.5.pkg"
+                    "browser_download_url": "https://github.com/SergeyZh/RightLayout/releases/download/v1.5/RightLayout-1.5.pkg"
                 }
             ]
         }
@@ -81,24 +81,24 @@ final class UpdateCheckerTests: XCTestCase {
         
         XCTAssertEqual(release.tagName, "v1.5")
         XCTAssertEqual(release.version, "1.5")
-        XCTAssertEqual(release.htmlURL, "https://github.com/chernistry/rightlayout/releases/tag/v1.5")
+        XCTAssertEqual(release.htmlURL, "https://github.com/SergeyZh/RightLayout/releases/tag/v1.5")
         XCTAssertNotNil(release.body)
         XCTAssertEqual(release.assets.count, 1)
         XCTAssertEqual(release.assets.first?.name, "RightLayout-1.5.pkg")
         XCTAssertNotNil(release.pkgDownloadURL)
-        XCTAssertEqual(release.pkgDownloadURL?.absoluteString, "https://github.com/chernistry/rightlayout/releases/download/v1.5/RightLayout-1.5.pkg")
+        XCTAssertEqual(release.pkgDownloadURL?.absoluteString, "https://github.com/SergeyZh/RightLayout/releases/download/v1.5/RightLayout-1.5.pkg")
     }
     
     func test_github_api_parsing_no_pkg_asset() throws {
         let json = """
         {
             "tag_name": "v1.5",
-            "html_url": "https://github.com/chernistry/rightlayout/releases/tag/v1.5",
+            "html_url": "https://github.com/SergeyZh/RightLayout/releases/tag/v1.5",
             "body": null,
             "assets": [
                 {
                     "name": "RightLayout-1.5.dmg",
-                    "browser_download_url": "https://github.com/chernistry/rightlayout/releases/download/v1.5/RightLayout-1.5.dmg"
+                    "browser_download_url": "https://github.com/SergeyZh/RightLayout/releases/download/v1.5/RightLayout-1.5.dmg"
                 }
             ]
         }
@@ -115,7 +115,7 @@ final class UpdateCheckerTests: XCTestCase {
         let json = """
         {
             "tag_name": "1.5",
-            "html_url": "https://github.com/chernistry/rightlayout/releases/tag/1.5",
+            "html_url": "https://github.com/SergeyZh/RightLayout/releases/tag/1.5",
             "body": "",
             "assets": []
         }
@@ -131,7 +131,7 @@ final class UpdateCheckerTests: XCTestCase {
         let json = """
         {
             "tag_name": "v1.5",
-            "html_url": "https://github.com/chernistry/rightlayout/releases/tag/v1.5",
+            "html_url": "https://github.com/SergeyZh/RightLayout/releases/tag/v1.5",
             "body": "Release notes",
             "assets": []
         }

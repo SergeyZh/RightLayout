@@ -12,7 +12,7 @@ enum AdapterAction: String, Codable, Sendable {
 /// Predicts the likelihood of a correction being accepted based on hashed features.
 /// Replaces the previous "BanditSolver".
 actor OnlineAdapter {
-    private let logger = Logger(subsystem: "com.chernistry.rightlayout", category: "OnlineAdapter")
+    private let logger = Logger(subsystem: "com.sergeyzh.rightlayout", category: "OnlineAdapter")
     
     // MARK: - State
     
@@ -62,7 +62,7 @@ actor OnlineAdapter {
             storeDir = fileManager.temporaryDirectory.appendingPathComponent("rightlayout_adapter_tests", isDirectory: true)
         } else {
             let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            storeDir = appSupport.appendingPathComponent("com.chernistry.rightlayout/Personalization")
+            storeDir = appSupport.appendingPathComponent("com.sergeyzh.rightlayout/Personalization")
         }
         self.fileURL = storeDir.appendingPathComponent("adapter_weights_v4.json")
 

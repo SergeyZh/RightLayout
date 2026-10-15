@@ -156,7 +156,7 @@ final class MyTests: XCTestCase {
 
 ```bash
 # Stream logs in real-time
-log stream --predicate 'subsystem == "com.chernistry.rightlayout"' --level debug
+log stream --predicate 'subsystem == "com.sergeyzh.rightlayout"' --level debug
 ```
 
 ### Xcode Debugging

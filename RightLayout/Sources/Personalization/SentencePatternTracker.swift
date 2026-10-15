@@ -18,7 +18,7 @@ actor SentencePatternTracker {
     private var state: SentencePatternState
     private let fileURL: URL
     private var isLoaded: Bool = false
-    private let logger = Logger(subsystem: "com.chernistry.rightlayout", category: "SentencePatternTracker")
+    private let logger = Logger(subsystem: "com.sergeyzh.rightlayout", category: "SentencePatternTracker")
 
     private static var isRunningTests: Bool {
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return true }
@@ -36,7 +36,7 @@ actor SentencePatternTracker {
             storeDir = fileManager.temporaryDirectory.appendingPathComponent("rightlayout_sentence_tests", isDirectory: true)
         } else {
             let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            let appDir = appSupport.appendingPathComponent("com.chernistry.rightlayout")
+            let appDir = appSupport.appendingPathComponent("com.sergeyzh.rightlayout")
             storeDir = appDir.appendingPathComponent("SentencePatterns")
         }
         self.fileURL = storeDir.appendingPathComponent("store.json")

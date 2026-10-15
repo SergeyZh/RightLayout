@@ -646,7 +646,7 @@ cmd_release_github() {
   fi
   
   # Get latest tag from GitHub releases (more reliable than local tags)
-  local latest=$(gh release list --repo chernistry/rightlayout --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "v0.0")
+  local latest=$(gh release list --repo SergeyZh/RightLayout --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "v0.0")
   latest=${latest#v}
   
   # Handle X.Y format (no patch)
@@ -676,19 +676,19 @@ cmd_release_github() {
   info "Triggering GitHub Actions release for v${version}..."
   
   gh workflow run release.yml \
-    --repo chernistry/rightlayout-src \
+    --repo SergeyZh/RightLayout \
     --field version="${version}" \
     --field release_type="${release_type}"
   
   success "Release workflow triggered!"
-  info "Watch progress: gh run watch --repo chernistry/rightlayout-src"
+  info "Watch progress: gh run watch --repo SergeyZh/RightLayout"
   echo ""
-  info "Or open: https://github.com/chernistry/rightlayout-src/actions"
+  info "Or open: https://github.com/SergeyZh/RightLayout/actions"
 }
 
 cmd_logs_stream() {
   info "Streaming logs (Ctrl+C to stop)..."
-  log stream --predicate 'subsystem == "com.chernistry.rightlayout"' --level debug --style compact
+  log stream --predicate 'subsystem == "com.sergeyzh.rightlayout"' --level debug --style compact
 }
 
 cmd_release_status() {
@@ -701,7 +701,7 @@ cmd_release_status() {
   fi
   
   # Get latest release from GitHub
-  local latest_release=$(gh release list --repo chernistry/rightlayout --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null)
+  local latest_release=$(gh release list --repo SergeyZh/RightLayout --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null)
   
   if [[ -z "$latest_release" ]]; then
     die "Could not fetch latest release from GitHub"
@@ -710,7 +710,7 @@ cmd_release_status() {
   info "📦 Latest release: ${COLOR_GREEN}${latest_release}${COLOR_RESET}"
   
   # Get the workflow run for that release
-  local run_id=$(gh run list --repo chernistry/rightlayout-src --workflow=release.yml --limit 10 --json databaseId,displayTitle --jq '.[] | select(.displayTitle == "Release") | .databaseId' 2>/dev/null | head -1)
+  local run_id=$(gh run list --repo SergeyZh/RightLayout --workflow=release.yml --limit 10 --json databaseId,displayTitle --jq '.[] | select(.displayTitle == "Release") | .databaseId' 2>/dev/null | head -1)
   
   if [[ -z "$run_id" ]]; then
     warn "Could not find release workflow run"
@@ -718,7 +718,7 @@ cmd_release_status() {
   fi
   
   # Get commit SHA from that run
-  local release_sha=$(gh api repos/chernistry/rightlayout-src/actions/runs/$run_id --jq '.head_sha' 2>/dev/null)
+  local release_sha=$(gh api repos/SergeyZh/RightLayout/actions/runs/$run_id --jq '.head_sha' 2>/dev/null)
   local release_sha_short=$(echo $release_sha | cut -c1-7)
   
   info "📍 Release built from: ${COLOR_YELLOW}${release_sha_short}${COLOR_RESET}"

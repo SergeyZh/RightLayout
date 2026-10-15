@@ -31,7 +31,7 @@ struct RightLayoutApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("RightLayout", systemImage: "keyboard") {
+        MenuBarExtra(AppIdentity.displayName, systemImage: "keyboard") {
             MenuBarView()
                 .environment(\.locale, settings.appLanguage.locale ?? .current)
                 .id(settings.appLanguage) // Force recreation on language change
@@ -39,7 +39,7 @@ struct RightLayoutApp: App {
         .menuBarExtraStyle(.menu)
         
         // Control-center settings window
-        Window("RightLayout Settings", id: "settings") {
+        Window("\(AppIdentity.displayName) Settings", id: "settings") {
             SettingsView()
                 .environment(\.locale, settings.appLanguage.locale ?? .current)
                 .id(settings.appLanguage) // Force recreation on language change
@@ -160,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "RightLayout Permissions"
+        window.title = "\(AppIdentity.displayName) Permissions"
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.center()
         window.isReleasedWhenClosed = false
@@ -198,8 +198,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func offerRelaunch() {
         let alert = NSAlert()
-        alert.messageText = "Restart RightLayout"
-        alert.informativeText = "Accessibility access is granted, but macOS will only apply it after RightLayout restarts."
+        alert.messageText = "Restart \(AppIdentity.displayName)"
+        alert.informativeText = "Accessibility access is granted, but macOS will only apply it after \(AppIdentity.displayName) restarts."
         alert.addButton(withTitle: "Restart")
         alert.addButton(withTitle: "Later")
         NSApp.activate(ignoringOtherApps: true)
@@ -329,7 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         let content = UNMutableNotificationContent()
-        content.title = "RightLayout Update Available"
+        content.title = "\(AppIdentity.displayName) Update Available"
         content.body = "Version \(version) is ready to download"
         content.sound = .default
         

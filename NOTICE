@@ -1,0 +1,13 @@
+RightLayout SergeyZh
+Copyright 2026 SergeyZh (https://github.com/SergeyZh)
+
+This product is a fork of RightLayout
+Copyright 2024 Alex Chernysh (https://alexchernysh.com)
+https://github.com/chernistry/RightLayout
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+"RightLayout" is the name of the original project. This fork uses it under the
+upstream name-use policy (TRADEMARKS.md): it is SergeyZh's build, not the
+official RightLayout app. Changes made in this fork are described in README.md
+and recorded in the git history.

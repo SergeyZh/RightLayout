@@ -13,7 +13,7 @@ import os.log
 @available(macOS 26, *)
 public final class FoundationModelClassifier: @unchecked Sendable {
 
-    private let logger = Logger(subsystem: "com.chernistry.rightlayout", category: "FoundationModel")
+    private let logger = Logger(subsystem: "com.sergeyzh.rightlayout", category: "FoundationModel")
 
     // MARK: - Structured Output
 

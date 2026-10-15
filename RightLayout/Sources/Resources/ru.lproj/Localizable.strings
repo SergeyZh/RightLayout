@@ -433,3 +433,6 @@
 "Match keyboard layouts enabled in macOS" = "Как раскладки, включённые в macOS";
 "Uses the languages of the input sources in System Settings → Keyboard → Input Sources, and follows changes there." = "Берёт языки источников ввода из Системных настроек → Клавиатура → Источники ввода и следит за их изменениями.";
 "With fewer than two languages there is nothing to switch between, so nothing gets corrected." = "Если выбрано меньше двух языков, переключать не между чем, и ничего исправляться не будет.";
+"Authorship" = "Авторство";
+"RightLayout SergeyZh is SergeyZh's build of RightLayout: a fork of RightLayout by Alex Chernysh, not the official RightLayout app." = "RightLayout SergeyZh — сборка RightLayout от SergeyZh: форк программы RightLayout Алекса Черныша, а не официальное приложение RightLayout.";
+"Original RightLayout project" = "Оригинальный проект RightLayout";

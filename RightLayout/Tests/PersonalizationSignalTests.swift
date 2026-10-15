@@ -44,7 +44,7 @@ final class PersonalizationSignalTests: XCTestCase {
         
         // Ensure clean personalization state
          let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let persDir = appSupport.appendingPathComponent("com.chernistry.rightlayout/Personalization")
+        let persDir = appSupport.appendingPathComponent("com.sergeyzh.rightlayout/Personalization")
         try? FileManager.default.removeItem(at: persDir)
     }
     

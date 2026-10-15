@@ -6,7 +6,7 @@ import os.log
 /// Wrapper for the CoreML LayoutClassifier model.
 /// Provides the "Deep Path" for language detection.
 public final class CoreMLLayoutClassifier {
-    private let logger = Logger(subsystem: "com.chernistry.rightlayout", category: "CoreML")
+    private let logger = Logger(subsystem: "com.sergeyzh.rightlayout", category: "CoreML")
     
     // MARK: - Constants
     

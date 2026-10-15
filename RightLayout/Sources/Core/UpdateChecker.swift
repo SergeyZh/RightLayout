@@ -84,8 +84,8 @@ public enum UpdateError: Error, Sendable, LocalizedError {
 public actor UpdateChecker {
     public static let shared = UpdateChecker()
     
-    private let releasesURL = URL(string: "https://api.github.com/repos/chernistry/rightlayout/releases/latest")!
-    private let logger = Logger(subsystem: "com.chernistry.rightlayout", category: "UpdateChecker")
+    private let releasesURL = URL(string: "https://api.github.com/repos/\(AppIdentity.repository)/releases/latest")!
+    private let logger = Logger(subsystem: "com.sergeyzh.rightlayout", category: "UpdateChecker")
     
     /// Checks for available updates
     /// - Returns: UpdateResult indicating whether an update is available

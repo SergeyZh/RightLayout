@@ -20,7 +20,7 @@ actor FeatureExtractor {
     }
     
     private static func getOrGenerateSalt() -> Data {
-        let key = "com.chernistry.rightlayout.personalization.salt"
+        let key = "com.sergeyzh.rightlayout.personalization.salt"
         if let stored = UserDefaults.standard.data(forKey: key) {
             return stored
         }

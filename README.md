@@ -1,12 +1,12 @@
 <div align="center">
 
-# RightLayout
+# RightLayout SergeyZh
 
 **Type freely.**
 
-RightLayout fixes your keyboard layout mistakes before you notice them.
+SergeyZh's build of [RightLayout](https://github.com/chernistry/RightLayout) — fixes your keyboard layout mistakes before you notice them.
 
-[Download for Mac](https://github.com/chernistry/RightLayout/releases/latest) · [Website](https://alexchernysh.com/rightlayout)
+[Download for Mac](https://github.com/SergeyZh/RightLayout/releases/latest) · [Original RightLayout](https://github.com/chernistry/RightLayout)
 
 ---
 
@@ -18,7 +18,28 @@ RightLayout fixes your keyboard layout mistakes before you notice them.
 
 ---
 
-> **This project is now community-maintained. The original author is no longer actively developing it. Contributions welcome!**
+> **This is a fork.** RightLayout SergeyZh is maintained by [SergeyZh](https://github.com/SergeyZh) and is based on
+> [RightLayout](https://github.com/chernistry/RightLayout) by [Alex Chernysh](https://alexchernysh.com).
+> It is not the official RightLayout app. Report problems with this build
+> [here](https://github.com/SergeyZh/RightLayout/issues), not to the original project.
+
+## Changes in this fork
+
+- Faster, more reliable switching: no Accessibility round trips on every keystroke, so cursor
+  movement and scrolling are no longer slowed down; the layout switches right after the decision,
+  and keeping on typing no longer cancels the correction.
+- Accessibility permission: detected without restarting; "Reset Permission" for stale entries
+  left by previous builds.
+- Automatic correction in apps that don't expose their text: Electron/Chromium apps (Claude,
+  Slack, VS Code…) and terminals (Terminal, iTerm2, Warp…).
+- Short words corrected automatically; limits configurable in Settings.
+- Manual correction by double-tapping Option or Shift.
+- Enter after a word that needs fixing fixes the word and is held back, so a garbled message is
+  not sent in chat apps.
+- Working languages: only the languages you use (by default, the layouts enabled in macOS) are
+  detected and switched between; fewer false conversions into Hebrew.
+
+Full details are in the git history.
 
 ---
 
@@ -57,7 +78,7 @@ Supports English, Russian, and Hebrew layouts with extensible architecture for a
 
 ## Install
 
-1. Download the `.pkg` from [Releases](https://github.com/chernistry/RightLayout/releases/latest)
+1. Download the `.pkg` from [Releases](https://github.com/SergeyZh/RightLayout/releases/latest)
 2. Run the installer
 3. Grant Accessibility permission when prompted
 4. Done — RightLayout works in the background
@@ -67,7 +88,7 @@ Supports English, Russian, and Hebrew layouts with extensible architecture for a
 ## Building from source
 
 ```bash
-git clone https://github.com/chernistry/RightLayout.git
+git clone https://github.com/SergeyZh/RightLayout.git
 cd RightLayout
 swift build
 swift test
@@ -79,17 +100,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and ho
 
 ---
 
-## Looking for Maintainers
+## Contributing
 
-This project needs new maintainers. If you're interested in macOS development, keyboard input handling, or CoreML-based language detection, this is a great project to take on.
-
-**What a maintainer would do:**
-- Triage and respond to issues
-- Review and merge pull requests
-- Cut new releases
-- Extend language support (German, French, Arabic, etc.)
-
-If you're interested, open an issue titled "Maintainer interest" and describe your background. There are no gatekeepers — if you ship good PRs, you get commit access.
+Issues and pull requests for this build go to [SergeyZh/RightLayout](https://github.com/SergeyZh/RightLayout).
+Changes that make sense for everyone are also offered upstream to
+[chernistry/RightLayout](https://github.com/chernistry/RightLayout).
 
 ---
 
@@ -106,12 +121,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details on adding features and langua
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE). Use of the project name: [TRADEMARKS.md](TRADEMARKS.md).
+Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Use of the RightLayout name: [TRADEMARKS.md](TRADEMARKS.md).
 
 ---
 
 <div align="center">
 
-Built by [Alex Chernysh](https://alexchernysh.com)
+RightLayout created by [Alex Chernysh](https://alexchernysh.com) · RightLayout SergeyZh maintained by [SergeyZh](https://github.com/SergeyZh)
 
 </div>
