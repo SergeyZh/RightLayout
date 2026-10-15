@@ -107,11 +107,6 @@ public final class SettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(isStrictPrivacyMode, forKey: "isStrictPrivacyMode") }
     }
     
-    /// Simple mode (default) vs Advanced mode for power users
-    @Published var isAdvancedMode: Bool {
-        didSet { UserDefaults.standard.set(isAdvancedMode, forKey: "isAdvancedMode") }
-    }
-    
     /// Proactive Hinting (Ticket 54)
     @Published public var proactiveHintsEnabled: Bool {
         didSet { UserDefaults.standard.set(proactiveHintsEnabled, forKey: "proactiveHintsEnabled") }
@@ -406,9 +401,7 @@ public final class SettingsManager: ObservableObject {
         self.isLearningEnabled = UserDefaults.standard.object(forKey: "isLearningEnabled") as? Bool ?? true
         self.isStatsCollectionEnabled = UserDefaults.standard.object(forKey: "isStatsCollectionEnabled") as? Bool ?? true
         self.isStrictPrivacyMode = UserDefaults.standard.object(forKey: "isStrictPrivacyMode") as? Bool ?? false
-        self.isAdvancedMode = UserDefaults.standard.object(forKey: "isAdvancedMode") as? Bool ?? false
         self.isStrictPrivacyMode = UserDefaults.standard.object(forKey: "isStrictPrivacyMode") as? Bool ?? false
-        self.isAdvancedMode = UserDefaults.standard.object(forKey: "isAdvancedMode") as? Bool ?? false
         self.proactiveHintsEnabled = UserDefaults.standard.object(forKey: "proactiveHintsEnabled") as? Bool ?? true
         self.transliterationHintsEnabled = UserDefaults.standard.object(forKey: "transliterationHintsEnabled") as? Bool ?? false
         
