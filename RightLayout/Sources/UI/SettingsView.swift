@@ -38,19 +38,6 @@ public struct SettingsView: View {
             .background(Theme.Color.pageBackgroundPrimary)
         }
         .searchable(text: $searchText, placement: .toolbar, prompt: Text("Search settings", bundle: settings.resourceBundle))
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Toggle(isOn: $settings.isAdvancedMode) {
-                    Label {
-                        Text("Advanced diagnostics", bundle: settings.resourceBundle)
-                    } icon: {
-                        Image(systemName: "waveform.path.ecg")
-                    }
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-            }
-        }
         .frame(minWidth: 860, minHeight: 620)
     }
 }

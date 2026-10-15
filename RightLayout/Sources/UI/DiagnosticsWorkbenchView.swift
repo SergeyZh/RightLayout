@@ -5,12 +5,8 @@ struct DiagnosticsWorkbenchView: View {
     @ObservedObject private var navigation = SettingsNavigationState.shared
     @State private var hasAccessibilityPermission = SandboxPermissionManager.shared.checkAccessibilityPermission()
 
-    private var availableTabs: [DiagnosticsTab] {
-        settings.isAdvancedMode ? DiagnosticsTab.allCases : [.history, .insights]
-    }
-
     private var selectedTab: DiagnosticsTab {
-        availableTabs.contains(navigation.selectedDiagnosticsTab) ? navigation.selectedDiagnosticsTab : .history
+        navigation.selectedDiagnosticsTab
     }
 
     private var issues: [AppStatusIssue] {
@@ -43,12 +39,12 @@ struct DiagnosticsWorkbenchView: View {
             issues: issues,
             accessory: AnyView(
                 Picker(UIStrings.text("Diagnostics tab"), selection: $navigation.selectedDiagnosticsTab) {
-                    ForEach(availableTabs) { tab in
+                    ForEach(DiagnosticsTab.allCases) { tab in
                         Text(LocalizedStringKey(tab.title), bundle: settings.resourceBundle).tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: settings.isAdvancedMode ? 340 : 220)
+                .frame(width: 340)
             )
         ) {
             switch selectedTab {
@@ -74,14 +70,6 @@ struct DiagnosticsWorkbenchView: View {
         }
         .onAppear {
             hasAccessibilityPermission = SandboxPermissionManager.shared.checkAccessibilityPermission()
-            if !availableTabs.contains(navigation.selectedDiagnosticsTab) {
-                navigation.selectedDiagnosticsTab = .history
-            }
-        }
-        .onChange(of: settings.isAdvancedMode) { _ in
-            if !availableTabs.contains(navigation.selectedDiagnosticsTab) {
-                navigation.selectedDiagnosticsTab = .history
-            }
         }
     }
 }
