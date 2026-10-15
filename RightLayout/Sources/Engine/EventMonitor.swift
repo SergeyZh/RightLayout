@@ -68,11 +68,19 @@ public final class EventMonitor {
         let expectedLayoutId: String?
         let expiresAt: Date
 
-        func matches(currentLayoutId: String?, now: Date) -> Bool {
+        func matches(currentLayoutId: String?, currentVariantId: String?, now: Date) -> Bool {
             guard now <= expiresAt else { return false }
             guard let expectedLayoutId else { return true }
-            return currentLayoutId == expectedLayoutId
+            return currentLayoutId == expectedLayoutId || currentVariantId == expectedLayoutId
         }
+    }
+
+    private struct BoundaryVerification {
+        let context: VerifiedEditContext
+        let includesSeparator: Bool
+        /// Text typed after the separator while the boundary was being processed,
+        /// exactly as it appears in the document.
+        let trailingText: String
     }
 
     private enum RuntimeState: String {
@@ -129,6 +137,21 @@ public final class EventMonitor {
     private var selectionIntentState = SelectionIntentState()
     private var pendingLayoutSwitch: PendingLayoutSwitch?
     private var runtimeState: RuntimeState = .tracking
+    /// Bumped whenever the text after the last committed boundary stops being a plain
+    /// continuation of it (new boundary, backspace past it, session reset/reseed).
+    private var boundaryGeneration: UInt64 = 0
+    private var boundaryTasksInFlight = 0
+    /// Mutation sequence right after the last external invalidation; lets bursts of
+    /// invalidating events (key auto-repeat, mouse drags) skip redundant work.
+    private var invalidatedAtMutationSeq: UInt64?
+    private var deferredResyncTask: Task<Void, Never>?
+    private var suppressLayoutFeedbackUntil: Date = .distantPast
+
+    /// Delay before re-reading the focused text after cursor movement or other external
+    /// changes. Reading it synchronously from the event tap stalls every keystroke.
+    private static let deferredResyncDelay: UInt64 = 90_000_000
+    private static let boundaryVerificationAttempts = 12
+    private static let boundaryVerificationRetryDelay: UInt64 = 5_000_000
 
     package private(set) var lastReplacement: (deletedCount: Int, insertedText: String)?
 
@@ -174,9 +197,14 @@ public final class EventMonitor {
 
     private func handleLayoutChange() async {
         let now = timeProvider.now
+        guard now > suppressLayoutFeedbackUntil else {
+            pendingLayoutSwitch = nil
+            return
+        }
         let currentLayoutId = InputSourceManager.shared.currentLayoutId()
+        let currentVariantId = InputSourceManager.shared.layoutVariantId(forInputSourceId: currentLayoutId)
         if let pendingLayoutSwitch,
-           pendingLayoutSwitch.matches(currentLayoutId: currentLayoutId, now: now) {
+           pendingLayoutSwitch.matches(currentLayoutId: currentLayoutId, currentVariantId: currentVariantId, now: now) {
             trace.log(
                 .layoutSwitchObserved,
                 fields: [
@@ -203,7 +231,8 @@ public final class EventMonitor {
                    transactionEpoch != inputSession.sessionEpoch {
                     return
                 }
-                if currentLayoutId == transaction.inputSourceAfterExpected {
+                if currentLayoutId == transaction.inputSourceAfterExpected
+                    || currentVariantId == transaction.inputSourceAfterExpected {
                     return
                 }
             }
@@ -237,6 +266,7 @@ public final class EventMonitor {
     }
 
     private func resetOnAppChange() {
+        textContextService.invalidateCachedCapabilities()
         let newApp = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         if newApp != lastActiveApp {
             Task { await engine.resetCycling() }
@@ -266,16 +296,12 @@ public final class EventMonitor {
     }
 
     package func start() async {
+        // Only keyboard events go through the active tap: every event it receives is held
+        // until the callback returns. Mouse and scroll events are observed passively below
+        // so the pointer and scrolling never wait on us.
         let types: [CGEventType] = [
             .keyDown,
-            .flagsChanged,
-            .leftMouseDown,
-            .rightMouseDown,
-            .otherMouseDown,
-            .leftMouseDragged,
-            .rightMouseDragged,
-            .otherMouseDragged,
-            .scrollWheel
+            .flagsChanged
         ]
         let mask = types.reduce(CGEventMask(0)) { partial, type in
             partial | (1 << type.rawValue)
@@ -323,15 +349,22 @@ public final class EventMonitor {
 
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel]
-        ) { [weak self] _ in
+        ) { [weak self] event in
+            let isDrag = event.type == .leftMouseDragged || event.type == .rightMouseDragged || event.type == .otherMouseDragged
             Task { @MainActor [weak self] in
-                self?.handleExternalInvalidation(reason: "Mouse/Scroll", clearPhraseContext: false)
+                guard let self else { return }
+                if isDrag {
+                    self.selectionIntentState.mark(now: self.timeProvider.now, source: "mouseDrag")
+                }
+                self.handleExternalInvalidation(reason: "Mouse/Scroll", clearPhraseContext: false)
             }
         }
     }
 
     package func stop() {
         stopAXObserver()
+        deferredResyncTask?.cancel()
+        deferredResyncTask = nil
 
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
@@ -475,14 +508,11 @@ public final class EventMonitor {
             backspaceReportedForId = nil
         }
 
-        let navigationKeys: Set<CGKeyCode> = [123, 124, 125, 126, 115, 119, 116, 121, 117]
-        if navigationKeys.contains(keyCode) {
+        if Self.navigationKeys.contains(keyCode) {
             if flags.contains(.maskShift) {
                 selectionIntentState.mark(now: now, source: "shiftNavigation")
             }
-            clearTransliterationHint()
             handleExternalInvalidation(reason: "Navigation", clearPhraseContext: false)
-            Task { await engine.resetCycling() }
             return Unmanaged.passUnretained(event)
         }
 
@@ -494,7 +524,10 @@ public final class EventMonitor {
         cancelStandaloneOptionTap()
 
         if inputSession.typedToken.isEmpty, let first = chars.first, first.isLetter || first.isNumber {
-            NotificationCenter.default.post(name: Notification.Name("ProactiveLayoutHint"), object: nil, userInfo: nil)
+            // Observers update UI; keep that work out of the event tap callback.
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: Notification.Name("ProactiveLayoutHint"), object: nil, userInfo: nil)
+            }
             clearTransliterationHint()
         }
 
@@ -502,12 +535,14 @@ public final class EventMonitor {
            let last = lastKeyTime,
            now.timeIntervalSince(last) > ThresholdsConfig.shared.timing.bufferTimeout {
             inputSession.typedToken = ""
+            boundaryGeneration &+= 1
             keyTimings.removeAll()
         }
 
         if isWordBoundaryTrigger(chars) {
             let token = inputSession.typedToken
             inputSession.typedToken = ""
+            boundaryGeneration &+= 1
             bumpSessionMutation(at: now)
             lastKeyTime = now
 
@@ -519,12 +554,17 @@ public final class EventMonitor {
             }
 
             let expectedMutationSeq = inputSession.mutationSeq
+            let generation = boundaryGeneration
+            let latencies = keyTimings
+            keyTimings.removeAll()
             Task { @MainActor in
                 await processCommittedBoundary(
                     token: token,
                     separator: chars,
                     proxy: proxy,
-                    expectedMutationSeq: expectedMutationSeq
+                    expectedMutationSeq: expectedMutationSeq,
+                    boundaryGeneration: generation,
+                    latencies: latencies
                 )
             }
             return Unmanaged.passUnretained(event)
@@ -555,6 +595,7 @@ public final class EventMonitor {
             inputSession.isDirty = true
             inputSession.lastVerifiedSnapshot = nil
             inputSession.mutationSeq &+= 1
+            boundaryGeneration &+= 1
             lastCommittedToken = nil
         }
 
@@ -599,18 +640,24 @@ public final class EventMonitor {
         token: String,
         separator: String,
         proxy: CGEventTapProxy,
-        expectedMutationSeq: UInt64
+        expectedMutationSeq: UInt64,
+        boundaryGeneration generation: UInt64,
+        latencies: [TimeInterval]
     ) async {
+        boundaryTasksInFlight += 1
+        defer { boundaryTasksInFlight -= 1 }
+
         runtimeState = .boundaryPending
-        guard expectedMutationSeq == inputSession.mutationSeq else {
+        guard generation == boundaryGeneration else {
             preserveCommittedBoundaryIfNeeded(token: token, separator: separator)
             return
         }
 
-        let expectedVisibleText = token + separator
+        let isSyntheticHost = skipEventPosting || skipPIDCheck
         let focusedCapabilities = textContextService.resolveFocusedElementCapabilities()
         let bundleId = focusedCapabilities?.bundleId ?? lastActiveApp
         let hostProfile = currentHostRuntimeProfile(bundleId: bundleId, capabilities: focusedCapabilities?.capabilities)
+        let canVerifyText = isSyntheticHost || focusedCapabilities?.capabilities.supportsFullTextRead == true
         trace.log(
             .boundaryDetected,
             fields: [
@@ -622,16 +669,9 @@ public final class EventMonitor {
                 "separator": separator
             ]
         )
-        let verifiedContext = await committedBoundaryVerificationContext(
-            token: token,
-            separator: separator
-        )
         let editingEnvironment = hostProfile.editingEnvironment
-        let matchedExpectedText = verifiedContext?.verifiedText ?? expectedVisibleText
-        let matchedReplacementSuffix = verifiedContext?.verifiedText.hasSuffix(separator) == true ? separator : ""
 
-        if await engine.checkForRetype(text: token, bundleId: verifiedContext?.snapshot.bundleId ?? lastActiveApp) {
-            keyTimings.removeAll()
+        if await engine.checkForRetype(text: token, bundleId: isSyntheticHost ? lastActiveApp : bundleId) {
             updatePhraseBuffer(with: splitBufferContent(token).token)
             lastCommittedToken = CommittedTokenContext(token: token, separator: separator)
             clearTransliterationHint()
@@ -650,11 +690,13 @@ public final class EventMonitor {
         let currentLayoutId = InputSourceManager.shared.currentLayoutId()
         let currentLanguage = mapLayoutToLanguage(currentLayoutId)
 
+        // Decide first; the focused text is only read back when there is something to
+        // replace. Most words need no correction and never touch Accessibility here.
         var planned = await engine.planCorrection(
             token,
             phraseBuffer: inputSession.phraseContext,
             expectedLayout: currentLanguage,
-            latencies: keyTimings,
+            latencies: latencies,
             editingEnvironment: editingEnvironment
         )
         trace.log(
@@ -688,11 +730,15 @@ public final class EventMonitor {
                 )
             )
         }
-        keyTimings.removeAll()
 
         await engine.updateCyclingTrailingSeparator(separator)
 
-        guard expectedMutationSeq == inputSession.mutationSeq else {
+        // The user may already be typing the next word. That is fine for a plain
+        // auto-replacement (the new characters are carried over), anything else keeps
+        // the old conservative behavior.
+        let typedSinceBoundary = !inputSession.typedToken.isEmpty
+        guard generation == boundaryGeneration,
+              !typedSinceBoundary || (matchesAutoReplace(planned.plan) && planned.result.pendingCorrection == nil) else {
             preserveCommittedBoundaryIfNeeded(token: token, separator: separator)
             await engine.resetCycling()
             return
@@ -702,7 +748,8 @@ public final class EventMonitor {
 
         let previousCommitted = recentCommittedTokenContext()
         let fallbackCascade: (original: String, replacement: String)?
-        if planned.result.pendingCorrection == nil,
+        if !typedSinceBoundary,
+           planned.result.pendingCorrection == nil,
            case .autoReplace = planned.plan,
            editingEnvironment == .accessibility,
            let last = previousCommitted,
@@ -710,7 +757,7 @@ public final class EventMonitor {
            let targetLanguage = planned.result.targetLanguage {
             let contextual = await engine.contextualCascadeCorrection(for: last.token, targetLanguage: targetLanguage)
             if let contextual {
-            fallbackCascade = (last.token, contextual)
+                fallbackCascade = (last.token, contextual)
             } else {
                 fallbackCascade = nil
             }
@@ -723,15 +770,23 @@ public final class EventMonitor {
            let last = previousCommitted,
            last.token == pendingOriginal {
             let combinedStem = pendingOriginal + last.separator + token
-            guard let combinedContext = await committedBoundaryVerificationContext(
+            guard let combinedVerification = await verifyCommittedBoundary(
                 token: combinedStem,
-                separator: separator
+                separator: separator,
+                generation: generation,
+                allowTrailingText: false,
+                canVerifyText: canVerifyText
             ) else {
+                if generation != boundaryGeneration || !inputSession.typedToken.isEmpty {
+                    preserveCommittedBoundaryIfNeeded(token: token, separator: separator)
+                    await engine.resetCycling()
+                }
                 return
             }
+            let combinedContext = combinedVerification.context
 
             let combinedOriginal = combinedContext.verifiedText
-            let inserted = pendingCorrection + last.separator + outputToken + (combinedOriginal.hasSuffix(separator) ? separator : "")
+            let inserted = pendingCorrection + last.separator + outputToken + (combinedVerification.includesSeparator ? separator : "")
             let applied = await performReplacement(
                 intent: .autoCorrection,
                 expectedOriginal: combinedOriginal,
@@ -767,51 +822,115 @@ public final class EventMonitor {
 
         switch planned.plan {
         case .autoReplace(let candidate):
+            let transaction = candidate.transaction ?? planned.result.transaction
+            let targetLanguage = planned.result.targetLanguage
             let allowEventReplayFallback =
+                inputSession.typedToken.isEmpty &&
                 hostProfile.allowsAutomaticBlindReplay &&
                 shouldAllowAutomaticReplayFallback(
-                    for: matchedExpectedText,
+                    for: token + separator,
                     confidence: planned.result.confidence,
                     hostRuntimeProfile: hostProfile
                 )
-            guard verifiedContext != nil || allowEventReplayFallback else {
+
+            // Switch the layout right away, before the text is read back and replaced, so
+            // that whatever the user types next already lands in the right layout. If the
+            // replacement doesn't happen after all, the switch is undone below.
+            let layoutBeforeSwitch = InputSourceManager.shared.currentLayoutId()
+            let canSwitchEarly =
+                (editingEnvironment == .accessibility && canVerifyText) ||
+                (allowEventReplayFallback && hostProfile.switchSafeAfterBlindReplay)
+            var switchedEarly = false
+            if canSwitchEarly {
+                switchedEarly = switchInputSourceIfNeeded(to: targetLanguage, transactionId: transaction?.id)
+            }
+            let charactersTypedBeforeSwitch = inputSession.typedToken.count
+
+            let verification = await verifyCommittedBoundary(
+                token: token,
+                separator: separator,
+                generation: generation,
+                allowTrailingText: true,
+                canVerifyText: canVerifyText
+            )
+
+            guard generation == boundaryGeneration else {
+                if switchedEarly {
+                    revertInputSource(to: layoutBeforeSwitch)
+                }
+                preserveCommittedBoundaryIfNeeded(token: token, separator: separator)
+                await engine.resetCycling()
+                return
+            }
+
+            guard verification != nil || allowEventReplayFallback else {
+                if switchedEarly {
+                    revertInputSource(to: layoutBeforeSwitch)
+                }
                 updatePhraseBuffer(with: splitBufferContent(token).token)
                 lastCommittedToken = CommittedTokenContext(token: token, separator: separator)
                 setTransliterationHint(nil, separator: separator, commitRevision: expectedMutationSeq)
                 return
             }
 
+            let expectedOriginal: String
+            let replacement: String
+            if let verification {
+                let trailingText = switchedEarly
+                    ? convertTypedTail(
+                        verification.trailingText,
+                        charactersTypedBeforeSwitch: charactersTypedBeforeSwitch,
+                        from: Self.sourceLanguage(of: transaction?.hypothesis) ?? currentLanguage,
+                        to: targetLanguage
+                    )
+                    : verification.trailingText
+                expectedOriginal = verification.context.verifiedText
+                replacement = candidate.replacement
+                    + (verification.includesSeparator ? separator : "")
+                    + trailingText
+            } else {
+                expectedOriginal = token + separator
+                replacement = candidate.replacement + separator
+            }
+
             let applied = await performReplacement(
                 intent: .autoCorrection,
-                expectedOriginal: matchedExpectedText,
-                replacement: candidate.replacement + (verifiedContext == nil ? separator : matchedReplacementSuffix),
-                verifiedContext: verifiedContext,
+                expectedOriginal: expectedOriginal,
+                replacement: replacement,
+                verifiedContext: verification?.context,
                 allowClipboardFallback: false,
                 allowEventReplayFallback: allowEventReplayFallback,
-                currentVisibleText: matchedExpectedText,
+                currentVisibleText: expectedOriginal,
                 hostRuntimeProfile: hostProfile,
                 proxy: proxy
             )
-            guard let applied else { return }
+            guard let applied else {
+                if switchedEarly {
+                    revertInputSource(to: layoutBeforeSwitch)
+                }
+                return
+            }
 
             lastCommittedToken = CommittedTokenContext(token: candidate.replacement, separator: separator)
             updatePhraseBuffer(with: splitBufferContent(candidate.replacement).token)
             setTransliterationHint(nil, separator: separator, commitRevision: expectedMutationSeq)
             await commitReplacementTransaction(
-                candidate.transaction ?? planned.result.transaction,
+                transaction,
                 editResult: applied,
-                verifiedContext: verifiedContext
+                verifiedContext: verification?.context
             )
-            if let transactionId = (candidate.transaction ?? planned.result.transaction)?.id {
+            if let transactionId = transaction?.id {
                 lastCorrectionTrackingId = transactionId
                 lastCorrectionTime = timeProvider.now
                 backspaceReportedForId = nil
             }
-            if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
-                switchInputSourceIfNeeded(
-                    to: planned.result.targetLanguage,
-                    transactionId: (candidate.transaction ?? planned.result.transaction)?.id
-                )
+            let switchAllowed = shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile)
+            if switchedEarly {
+                if !switchAllowed {
+                    revertInputSource(to: layoutBeforeSwitch)
+                }
+            } else if switchAllowed {
+                switchInputSourceIfNeeded(to: targetLanguage, transactionId: transaction?.id)
             }
         case .hint, .none:
             updatePhraseBuffer(with: splitBufferContent(outputToken).token)
@@ -823,9 +942,61 @@ public final class EventMonitor {
         runtimeState = .tracking
     }
 
-    private func switchInputSourceIfNeeded(to language: Language?, transactionId: UUID? = nil) {
-        guard let language else { return }
-        guard settings.autoSwitchLayout else { return }
+    /// Converts characters typed after a boundary whose word is being auto-corrected.
+    ///
+    /// The first `charactersTypedBeforeSwitch` characters were typed before the layout
+    /// switch and are converted as a whole. Later ones may already be in the target
+    /// layout, so only letters that still belong to the source layout are converted.
+    private func convertTypedTail(
+        _ tail: String,
+        charactersTypedBeforeSwitch: Int,
+        from source: Language?,
+        to target: Language?
+    ) -> String {
+        guard !tail.isEmpty, let source, let target, source != target else { return tail }
+
+        let mapper = LayoutMapper.shared
+        let activeLayouts = settings.activeLayouts
+        let characters = Array(tail)
+        let headCount = min(max(charactersTypedBeforeSwitch, 0), characters.count)
+
+        var result = ""
+        if headCount > 0 {
+            let head = String(characters[..<headCount])
+            result = mapper.convert(head, from: source, to: target, activeLayouts: activeLayouts) ?? head
+        }
+        for character in characters[headCount...] {
+            let original = String(character)
+            if character.isLetter,
+               let converted = mapper.convert(original, from: source, to: target, activeLayouts: activeLayouts),
+               converted != original,
+               converted.allSatisfy({ $0.isLetter }) {
+                result += converted
+            } else {
+                result += original
+            }
+        }
+        return result
+    }
+
+    private static func sourceLanguage(of hypothesis: LanguageHypothesis?) -> Language? {
+        guard let hypothesis else { return nil }
+        switch hypothesis {
+        case .ruFromEnLayout, .heFromEnLayout:
+            return .english
+        case .enFromRuLayout, .heFromRuLayout:
+            return .russian
+        case .enFromHeLayout, .ruFromHeLayout:
+            return .hebrew
+        case .ru, .en, .he:
+            return nil
+        }
+    }
+
+    @discardableResult
+    private func switchInputSourceIfNeeded(to language: Language?, transactionId: UUID? = nil) -> Bool {
+        guard let language else { return false }
+        guard settings.autoSwitchLayout else { return false }
         trace.log(
             .layoutSwitchRequested,
             fields: [
@@ -842,7 +1013,7 @@ public final class EventMonitor {
                 expiresAt: timeProvider.now.addingTimeInterval(1.0)
             )
             if InputSourceManager.shared.switchToLayoutVariant(preferredLayout) {
-                return
+                return true
             }
         }
         pendingLayoutSwitch = PendingLayoutSwitch(
@@ -851,6 +1022,16 @@ public final class EventMonitor {
             expiresAt: timeProvider.now.addingTimeInterval(1.0)
         )
         InputSourceManager.shared.switchTo(language: language)
+        return true
+    }
+
+    /// Undoes an early layout switch when the replacement it anticipated didn't happen.
+    private func revertInputSource(to layoutId: String?) {
+        guard let layoutId, layoutId != InputSourceManager.shared.currentLayoutId() else { return }
+        // Both the original switch and this one will be observed; neither is user feedback.
+        pendingLayoutSwitch = nil
+        suppressLayoutFeedbackUntil = timeProvider.now.addingTimeInterval(1.0)
+        InputSourceManager.shared.switchToLayoutId(layoutId)
     }
 
     private func shouldSwitchLayout(after result: TextEditResult, hostRuntimeProfile: HostRuntimeProfile) -> Bool {
@@ -1281,19 +1462,73 @@ public final class EventMonitor {
         }
     }
 
-    private func committedBoundaryVerificationContext(
+    /// Reads the focused text back and checks that it ends with `token` + `separator`
+    /// (plus, if allowed, whatever the user has typed since).
+    ///
+    /// Retries briefly while the host app catches up with the keystrokes, and gives up
+    /// as soon as the session moves on (`generation` changes).
+    private func verifyCommittedBoundary(
         token: String,
-        separator: String
-    ) async -> VerifiedEditContext? {
+        separator: String,
+        generation: UInt64,
+        allowTrailingText: Bool,
+        canVerifyText: Bool
+    ) async -> BoundaryVerification? {
+        let committedText = token + separator
+
         if skipEventPosting || skipPIDCheck {
-            return syntheticVerifiedContext(for: token + separator)
+            let trailingText = inputSession.typedToken
+            guard allowTrailingText || trailingText.isEmpty else { return nil }
+            return BoundaryVerification(
+                context: syntheticVerifiedContext(for: committedText + trailingText),
+                includesSeparator: true,
+                trailingText: trailingText
+            )
+        }
+
+        // A host that doesn't expose its text won't start doing so within milliseconds;
+        // don't hold the correction back polling it.
+        guard canVerifyText else {
+            trace.log(
+                .verificationResult,
+                fields: [
+                    "mode": "boundary",
+                    "result": "unavailable",
+                    "attempt": "0",
+                    "token": token,
+                    "separator": separator
+                ]
+            )
+            return nil
         }
 
         var latestSnapshot: FocusedTextSnapshot?
         var latestSeed: InputSessionSeed?
+        var lastAttemptMismatched = false
 
-        for attempt in 0..<5 {
-            switch textContextService.verifyCommittedBoundary(token: token, separator: separator, revision: inputSession.mutationSeq) {
+        for attempt in 0..<Self.boundaryVerificationAttempts {
+            if attempt > 0 {
+                try? await Task.sleep(nanoseconds: Self.boundaryVerificationRetryDelay)
+            }
+            guard generation == boundaryGeneration else { return nil }
+
+            let trailingCount = inputSession.typedToken.count
+            guard allowTrailingText || trailingCount == 0 else { return nil }
+
+            let result = trailingCount == 0
+                ? textContextService.verifyCommittedBoundary(
+                    token: token,
+                    separator: separator,
+                    revision: inputSession.mutationSeq
+                )
+                : textContextService.verifyCommittedBoundary(
+                    token: token,
+                    separator: separator,
+                    trailingCharacterCount: trailingCount,
+                    revision: inputSession.mutationSeq
+                )
+
+            switch result {
             case .verified(let context):
                 trace.log(
                     .verificationResult,
@@ -1306,7 +1541,17 @@ public final class EventMonitor {
                 )
                 inputSession.lastVerifiedSnapshot = context.snapshot
                 inputSession.isDirty = false
-                return context
+
+                let committedLength = committedText.utf16.count
+                let verifiedLength = context.verifiedText.utf16.count
+                let trailingText = verifiedLength > committedLength
+                    ? (context.verifiedText as NSString).substring(from: committedLength)
+                    : ""
+                return BoundaryVerification(
+                    context: context,
+                    includesSeparator: verifiedLength >= committedLength,
+                    trailingText: trailingText
+                )
             case .unavailable:
                 trace.log(
                     .verificationResult,
@@ -1318,11 +1563,7 @@ public final class EventMonitor {
                         "separator": separator
                     ]
                 )
-                if attempt < 4 {
-                    try? await Task.sleep(nanoseconds: 15_000_000)
-                    continue
-                }
-                return nil
+                lastAttemptMismatched = false
             case .mismatch(let snapshot, let seed):
                 trace.log(
                     .verificationResult,
@@ -1336,12 +1577,11 @@ public final class EventMonitor {
                 )
                 latestSnapshot = snapshot
                 latestSeed = seed
-                if attempt < 4 {
-                    try? await Task.sleep(nanoseconds: 15_000_000)
-                    continue
-                }
+                lastAttemptMismatched = true
             }
         }
+
+        guard lastAttemptMismatched, generation == boundaryGeneration else { return nil }
 
         if let latestSnapshot, let latestSeed {
             applySeed(latestSeed, snapshot: latestSnapshot, bumpSessionEpoch: true)
@@ -1433,7 +1673,25 @@ public final class EventMonitor {
         )
     }
 
+    /// Called from the event tap for navigation keys, shortcuts, clicks etc.
+    ///
+    /// Must stay cheap: the event being handled (and everything queued behind it) is held
+    /// until we return. The session is invalidated locally right away; re-reading the
+    /// focused text over Accessibility is deferred until the burst of events settles.
     private func handleExternalInvalidation(reason: String, clearPhraseContext: Bool) {
+        clearTransliterationHint()
+        cancelStandaloneOptionTap()
+        clearPendingCorrectionTracking()
+
+        if !clearPhraseContext,
+           let invalidatedAtMutationSeq,
+           invalidatedAtMutationSeq == inputSession.mutationSeq {
+            // Already invalidated by an earlier event of this burst (key auto-repeat,
+            // mouse drag, scrolling) and nothing was typed since.
+            scheduleDeferredResync()
+            return
+        }
+
         runtimeState = .dirtyNeedsResync
         trace.log(
             .sessionInvalidated,
@@ -1444,25 +1702,58 @@ public final class EventMonitor {
                 "mutation_seq": String(inputSession.mutationSeq)
             ]
         )
-        clearTransliterationHint()
-        cancelStandaloneOptionTap()
-        clearPendingCorrectionTracking()
 
         if skipEventPosting {
             resetSession(reason: reason, clearPhraseContext: clearPhraseContext)
-        } else if let snapshot = textContextService.snapshotFocusedText() {
-            applySeed(
-                textContextService.seedSession(from: snapshot),
-                snapshot: snapshot,
-                clearPhraseContext: clearPhraseContext,
-                bumpSessionEpoch: true
-            )
         } else {
-            resetSession(reason: reason, clearPhraseContext: clearPhraseContext)
+            invalidateSessionLocally(clearPhraseContext: clearPhraseContext)
+            scheduleDeferredResync()
         }
 
         lastCommittedToken = nil
+        invalidatedAtMutationSeq = inputSession.mutationSeq
         Task { await engine.resetCycling() }
+    }
+
+    private func invalidateSessionLocally(clearPhraseContext: Bool) {
+        inputSession.sessionEpoch &+= 1
+        inputSession.mutationSeq &+= 1
+        boundaryGeneration &+= 1
+        inputSession.typedToken = ""
+        if clearPhraseContext {
+            inputSession.phraseContext = ""
+        }
+        inputSession.isDirty = true
+        inputSession.lastVerifiedSnapshot = nil
+        inputSession.lastMutationAt = timeProvider.now
+        keyTimings.removeAll()
+        lastKeyTime = nil
+    }
+
+    /// Re-reads the focused text once events have settled, unless the user has started
+    /// typing in the meantime (then the locally tracked session is already correct).
+    private func scheduleDeferredResync() {
+        guard !skipEventPosting else { return }
+        deferredResyncTask?.cancel()
+        let expectedMutationSeq = inputSession.mutationSeq
+        deferredResyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.deferredResyncDelay)
+            guard !Task.isCancelled, let self else { return }
+            self.deferredResyncTask = nil
+            self.performDeferredResync(expectedMutationSeq: expectedMutationSeq)
+        }
+    }
+
+    private func performDeferredResync(expectedMutationSeq: UInt64) {
+        guard expectedMutationSeq == inputSession.mutationSeq,
+              activeSyntheticTransactions == 0,
+              boundaryTasksInFlight == 0,
+              let snapshot = textContextService.snapshotFocusedText() else {
+            return
+        }
+        // Seeding bumps the mutation sequence, so the next invalidating event takes the
+        // full path again and drops the seeded state.
+        applySeed(textContextService.seedSession(from: snapshot), snapshot: snapshot)
     }
 
     private func matchesAutoReplace(_ plan: CorrectionPlan) -> Bool {
@@ -1486,6 +1777,7 @@ public final class EventMonitor {
         )
         inputSession.sessionEpoch &+= 1
         inputSession.mutationSeq &+= 1
+        boundaryGeneration &+= 1
         inputSession.typedToken = ""
         if clearPhraseContext {
             inputSession.phraseContext = ""
@@ -1543,6 +1835,7 @@ public final class EventMonitor {
             inputSession.sessionEpoch &+= 1
         }
         inputSession.mutationSeq &+= 1
+        boundaryGeneration &+= 1
         inputSession.typedToken = seed.typedToken
         inputSession.phraseContext = clearPhraseContext ? "" : seed.phraseContext
         inputSession.sourceApp = seed.sourceApp ?? ""
@@ -1629,6 +1922,8 @@ public final class EventMonitor {
             || ch == "-"
             || ch == "—"
     }
+
+    private static let navigationKeys: Set<CGKeyCode> = [123, 124, 125, 126, 115, 119, 116, 121, 117]
 
     private func isWordBoundaryTrigger(_ text: String) -> Bool {
         guard let char = text.first else { return false }
@@ -1816,13 +2111,13 @@ public final class EventMonitor {
 
         switch notification {
         case String(kAXFocusedUIElementChangedNotification):
+            textContextService.invalidateCachedCapabilities()
             handleExternalInvalidation(reason: "AX Focused UI Element Changed", clearPhraseContext: false)
         case String(kAXSelectedTextChangedNotification), String(kAXValueChangedNotification):
-            if timeProvider.now.timeIntervalSince(inputSession.lastMutationAt) < 0.12 || !inputSession.typedToken.isEmpty {
-                return
-            }
-            guard let snapshot = textContextService.snapshotFocusedText() else { return }
-            applySeed(textContextService.seedSession(from: snapshot), snapshot: snapshot)
+            // These fire for every keystroke (and for unrelated elements of the app); only
+            // resync once things are quiet and we are not in the middle of a word.
+            guard inputSession.typedToken.isEmpty else { return }
+            scheduleDeferredResync()
         default:
             handleExternalInvalidation(reason: "AX \(notification)", clearPhraseContext: false)
         }
