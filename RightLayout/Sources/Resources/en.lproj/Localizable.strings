@@ -426,3 +426,5 @@
 "Right" = "Right";
 "Tip: Select text and double-tap the trigger key to cycle between EN, RU, and HE alternatives without changing more than the selected scope." = "Tip: Select text and double-tap the trigger key to cycle between EN, RU, and HE alternatives without changing more than the selected scope.";
 "What gets fixed on its own. Anything outside these limits is still one double-tap of the trigger key away." = "What gets fixed on its own. Anything outside these limits is still one double-tap of the trigger key away.";
+"Hold Enter when the last word needs fixing" = "Hold Enter when the last word needs fixing";
+"If Enter ends a word typed in the wrong layout, the word is fixed and that Enter is not sent. Check the text and press Enter again. Keeps garbled or wrongly fixed messages from going out in Slack, Telegram and other chats." = "If Enter ends a word typed in the wrong layout, the word is fixed and that Enter is not sent. Check the text and press Enter again. Keeps garbled or wrongly fixed messages from going out in Slack, Telegram and other chats.";

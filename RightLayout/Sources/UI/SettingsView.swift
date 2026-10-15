@@ -239,6 +239,14 @@ private struct GeneralPane: View {
                 Divider()
 
                 SettingsToggleRow(
+                    title: "Hold Enter when the last word needs fixing",
+                    detail: "If Enter ends a word typed in the wrong layout, the word is fixed and that Enter is not sent. Check the text and press Enter again. Keeps garbled or wrongly fixed messages from going out in Slack, Telegram and other chats.",
+                    isOn: $settings.holdEnterForCorrection
+                )
+
+                Divider()
+
+                SettingsToggleRow(
                     title: "Launch at login",
                     detail: "Start RightLayout with macOS so correction is available immediately.",
                     isOn: Binding(

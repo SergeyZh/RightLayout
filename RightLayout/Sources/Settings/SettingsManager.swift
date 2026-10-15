@@ -131,6 +131,12 @@ public final class SettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(isFoundationModelEnabled, forKey: "isFoundationModelEnabled") }
     }
 
+    /// When Enter ends a word that needs correcting, fix the word and swallow that Enter
+    /// instead of letting it through (and e.g. sending a garbled chat message).
+    @Published var holdEnterForCorrection: Bool {
+        didSet { UserDefaults.standard.set(holdEnterForCorrection, forKey: "holdEnterForCorrection") }
+    }
+
     // MARK: - Automatic correction limits
 
     static let autoCorrectWordLengthRange: ClosedRange<Int> = 1...6
@@ -329,6 +335,8 @@ public final class SettingsManager: ObservableObject {
         self.isVerifierEnabled = UserDefaults.standard.object(forKey: "isVerifierEnabled") as? Bool ?? !isTesting
         self.isFoundationModelEnabled = UserDefaults.standard.object(forKey: "isFoundationModelEnabled") as? Bool ?? true
         self.checkForUpdatesAutomatically = UserDefaults.standard.object(forKey: "checkForUpdatesAutomatically") as? Bool ?? true
+
+        self.holdEnterForCorrection = UserDefaults.standard.object(forKey: "holdEnterForCorrection") as? Bool ?? true
 
         let storedMinLength = UserDefaults.standard.object(forKey: "minAutoCorrectWordLength") as? Int
             ?? AutoCorrectionLimits.default.minimumWordLength
