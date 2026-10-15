@@ -41,6 +41,21 @@ package struct DecisionEvidence: Sendable {
     package let isWhitelistedShort: Bool
 }
 
+/// User-adjustable limits for automatic (as opposed to hotkey) correction.
+package struct AutoCorrectionLimits: Sendable, Equatable {
+    /// Words with fewer letters are left to the manual hotkey.
+    package var minimumWordLength: Int
+    /// Base confidence for apps whose text can't be read back (preset-adjusted).
+    package var blindConfidence: Double
+
+    package init(minimumWordLength: Int, blindConfidence: Double) {
+        self.minimumWordLength = minimumWordLength
+        self.blindConfidence = blindConfidence
+    }
+
+    package static let `default` = AutoCorrectionLimits(minimumWordLength: 2, blindConfidence: 0.88)
+}
+
 private struct PolicyThresholds {
     let axAuto: Double
     let axMargin: Double
@@ -53,14 +68,17 @@ private struct PolicyThresholds {
     let whitelistAuto: Double
     let whitelistHint: Double
 
-    static func forPreset(_ preset: SettingsManager.BehaviorPreset) -> PolicyThresholds {
+    static func forPreset(
+        _ preset: SettingsManager.BehaviorPreset,
+        blindConfidence: Double = AutoCorrectionLimits.default.blindConfidence
+    ) -> PolicyThresholds {
         let base = PolicyThresholds(
             axAuto: 0.78,
             axMargin: 0.12,
             axShortAuto: 0.90,
             axShortMargin: 0.16,
             axHint: 0.70,
-            nonAXAuto: 0.88,
+            nonAXAuto: blindConfidence,
             nonAXMargin: 0.16,
             nonAXHint: 0.74,
             whitelistAuto: 0.90,
@@ -75,7 +93,7 @@ private struct PolicyThresholds {
                 axShortAuto: min(1.0, base.axShortAuto + 0.06),
                 axShortMargin: base.axShortMargin + 0.02,
                 axHint: min(1.0, base.axHint + 0.04),
-                nonAXAuto: min(1.0, max(0.82, base.nonAXAuto + 0.06)),
+                nonAXAuto: min(1.0, base.nonAXAuto + 0.06),
                 nonAXMargin: base.nonAXMargin + 0.02,
                 nonAXHint: min(1.0, base.nonAXHint + 0.04),
                 whitelistAuto: min(1.0, base.whitelistAuto + 0.06),
@@ -90,7 +108,7 @@ private struct PolicyThresholds {
                 axShortAuto: max(0.0, base.axShortAuto - 0.06),
                 axShortMargin: max(0.14, base.axShortMargin - 0.02),
                 axHint: max(0.0, base.axHint - 0.05),
-                nonAXAuto: max(0.82, base.nonAXAuto - 0.06),
+                nonAXAuto: max(0.5, base.nonAXAuto - 0.06),
                 nonAXMargin: max(0.16, base.nonAXMargin - 0.02),
                 nonAXHint: max(0.0, base.nonAXHint - 0.05),
                 whitelistAuto: max(0.0, base.whitelistAuto - 0.06),
@@ -101,12 +119,22 @@ private struct PolicyThresholds {
 }
 
 package enum CorrectionDecisionPolicy {
+    /// Confidence an automatic correction needs in apps without readable text.
+    package static func blindAutoApplyThreshold(
+        preset: SettingsManager.BehaviorPreset,
+        limits: AutoCorrectionLimits
+    ) -> Double {
+        PolicyThresholds.forPreset(preset, blindConfidence: limits.blindConfidence).nonAXAuto
+    }
+
     package static func evaluate(
         evidence: DecisionEvidence,
         environment: EditingEnvironment,
-        preset: SettingsManager.BehaviorPreset
+        preset: SettingsManager.BehaviorPreset,
+        limits: AutoCorrectionLimits = .default
     ) -> CorrectionDisposition {
-        let thresholds = PolicyThresholds.forPreset(preset)
+        let thresholds = PolicyThresholds.forPreset(preset, blindConfidence: limits.blindConfidence)
+        let minimumLetters = max(1, limits.minimumWordLength)
 
         guard evidence.isCorrection else {
             return .reject
@@ -117,7 +145,7 @@ package enum CorrectionDecisionPolicy {
         }
 
         let letterCount = evidence.original.filter(\.isLetter).count
-        if letterCount <= 1 {
+        if letterCount < minimumLetters {
             return .manualOnly
         }
 
@@ -139,8 +167,9 @@ package enum CorrectionDecisionPolicy {
             )
         case .short:
             if evidence.isWhitelistedShort {
-                if environment == .accessibility,
-                   letterCount >= 2,
+                // Short words are retyped whole either way, so the same bar applies
+                // whether or not the host exposes its text.
+                if environment != .secureReadBlind,
                    evidence.confidence >= thresholds.whitelistAuto,
                    evidence.winnerMargin >= thresholds.axShortMargin {
                     return .autoApply
@@ -153,8 +182,7 @@ package enum CorrectionDecisionPolicy {
 
             switch environment {
             case .accessibility:
-                if letterCount >= 3,
-                   evidence.confidence >= thresholds.axShortAuto,
+                if evidence.confidence >= thresholds.axShortAuto,
                    evidence.winnerMargin >= thresholds.axShortMargin {
                     return .autoApply
                 }
@@ -163,6 +191,10 @@ package enum CorrectionDecisionPolicy {
                 }
                 return .manualOnly
             case .nonAccessibility:
+                if evidence.confidence >= max(thresholds.axShortAuto, thresholds.nonAXAuto),
+                   evidence.winnerMargin >= thresholds.axShortMargin {
+                    return .autoApply
+                }
                 if evidence.confidence >= thresholds.nonAXHint {
                     return .hint
                 }
@@ -173,7 +205,7 @@ package enum CorrectionDecisionPolicy {
         case .plain:
             switch environment {
             case .accessibility:
-                guard letterCount >= 4, letterCount <= 18 else {
+                guard letterCount <= 18 else {
                     return .manualOnly
                 }
                 if evidence.confidence >= thresholds.axAuto && evidence.winnerMargin >= thresholds.axMargin {
@@ -184,7 +216,7 @@ package enum CorrectionDecisionPolicy {
                 }
                 return .manualOnly
             case .nonAccessibility:
-                guard letterCount >= 5, letterCount <= 18 else {
+                guard letterCount <= 18 else {
                     return .manualOnly
                 }
                 if evidence.confidence >= thresholds.nonAXAuto && evidence.winnerMargin >= thresholds.nonAXMargin {

@@ -402,3 +402,14 @@
 "Reset Permission" = "Сбросить разрешение";
 "The old entry was removed. Enable RightLayout in the list that opens." = "Старая запись удалена. Включите RightLayout в открывшемся списке.";
 "Could not reset automatically. Run this in Terminal, then reopen RightLayout:" = "Не удалось сбросить автоматически. Выполните в Терминале и снова откройте RightLayout:";
+"Automatic correction limits" = "Ограничения автоисправления";
+"What gets fixed on its own. Anything outside these limits is still one double-tap of Option away." = "Что исправляется само. Всё, что вне этих рамок, по-прежнему исправляется двойным нажатием Option.";
+"Minimum word length" = "Минимальная длина слова";
+"Shorter words are only corrected with the hotkey. Short words are ambiguous, so they still need high confidence." = "Более короткие слова исправляются только горячей клавишей. Короткие слова неоднозначны, поэтому для них по-прежнему нужна высокая уверенность.";
+"Letters: %d" = "Букв: %d";
+"Confidence in apps without Accessibility" = "Уверенность в приложениях без Accessibility";
+"Claude, Slack, VS Code and other Electron apps don't expose their text, so the word is retyped without checking it first. Lower means more corrections, higher means fewer mistakes. The correction style shifts this by ±6%." = "Claude, Slack, VS Code и другие приложения на Electron не отдают свой текст, поэтому слово перенабирается без предварительной проверки. Ниже — больше исправлений, выше — меньше ошибок. Стиль исправления сдвигает порог на ±6%.";
+"Maximum pause before retyping" = "Максимальная пауза перед перенабором";
+"In those apps a word isn't retyped if this much time has passed since the last keystroke, so the retype can't land somewhere you moved to." = "В этих приложениях слово не перенабирается, если с последнего нажатия прошло больше этого времени — чтобы перенабор не попал туда, куда вы уже ушли.";
+"%.2f s" = "%.2f с";
+"Restore defaults" = "Восстановить по умолчанию";
