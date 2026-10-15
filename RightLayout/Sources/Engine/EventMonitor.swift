@@ -1063,7 +1063,7 @@ public final class EventMonitor {
                     ? convertTypedTail(
                         verification.trailingText,
                         charactersTypedBeforeSwitch: charactersTypedBeforeSwitch,
-                        from: Self.sourceLanguage(of: transaction?.hypothesis) ?? currentLanguage,
+                        from: transaction?.hypothesis?.sourceLanguage ?? currentLanguage,
                         to: targetLanguage
                     )
                     : verification.trailingText
@@ -1165,20 +1165,6 @@ public final class EventMonitor {
             }
         }
         return result
-    }
-
-    private static func sourceLanguage(of hypothesis: LanguageHypothesis?) -> Language? {
-        guard let hypothesis else { return nil }
-        switch hypothesis {
-        case .ruFromEnLayout, .heFromEnLayout:
-            return .english
-        case .enFromRuLayout, .heFromRuLayout:
-            return .russian
-        case .enFromHeLayout, .ruFromHeLayout:
-            return .hebrew
-        case .ru, .en, .he:
-            return nil
-        }
     }
 
     @discardableResult

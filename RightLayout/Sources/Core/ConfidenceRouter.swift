@@ -77,10 +77,16 @@ actor ConfidenceRouter {
         mode: DetectionMode = .automatic
     ) async -> DecisionEvidence {
         let activeLayouts = await settings.activeLayouts
+        let enabledLanguages = await settings.enabledLanguages
         var decision = await route(token: token, context: context, mode: mode)
 
         let kind = tokenKind(for: token)
-        let fallbackCandidate = scoredDecision(token: token, activeLayouts: activeLayouts, mode: mode)
+        let fallbackCandidate = scoredDecision(
+            token: token,
+            activeLayouts: activeLayouts,
+            mode: mode,
+            enabledLanguages: enabledLanguages
+        )
         if kind == .plain,
            !decision.layoutHypothesis.rawValue.contains("_from_"),
            let fallbackCandidate,
@@ -146,6 +152,47 @@ actor ConfidenceRouter {
     /// - CoreML detects LAYOUT MISMATCH ("this Cyrillic is gibberish Russian, but valid Hebrew from RU layout").
     /// - We ALWAYS invoke CoreML to check for `_from_` hypotheses, even if Fast/Standard is confident.
     func route(token: String, context: DetectorContext, mode: DetectionMode = .automatic) async -> LanguageDecision {
+        let enabledLanguages = await settings.enabledLanguages
+        let decision = await routeUnrestricted(
+            token: token,
+            context: context,
+            mode: mode,
+            enabledLanguages: enabledLanguages
+        )
+        return restrict(decision, token: token, to: enabledLanguages)
+    }
+
+    /// Last line of defence: a decision that involves a language the user doesn't work
+    /// with never turns into a correction; the token is kept as typed.
+    private func restrict(_ decision: LanguageDecision, token: String, to enabledLanguages: Set<Language>) -> LanguageDecision {
+        let allowedScores = decision.scores.filter { $0.key.isAllowed(in: enabledLanguages) }
+        guard !decision.layoutHypothesis.isAllowed(in: enabledLanguages) else {
+            return allowedScores.count == decision.scores.count
+                ? decision
+                : LanguageDecision(
+                    language: decision.language,
+                    layoutHypothesis: decision.layoutHypothesis,
+                    confidence: decision.confidence,
+                    scores: allowedScores
+                )
+        }
+
+        let language = dominantScriptLanguage(token) ?? decision.layoutHypothesis.sourceLanguage ?? .english
+        DecisionLogger.shared.log("LANGUAGE_FILTER: \(decision.layoutHypothesis.rawValue) involves a disabled language, keeping as-is")
+        return LanguageDecision(
+            language: language,
+            layoutHypothesis: language.asHypothesis,
+            confidence: decision.confidence,
+            scores: allowedScores
+        )
+    }
+
+    private func routeUnrestricted(
+        token: String,
+        context: DetectorContext,
+        mode: DetectionMode,
+        enabledLanguages: Set<Language>
+    ) async -> LanguageDecision {
         // NEW: User Dictionary Lookup
         if let rule = await UserDictionary.shared.lookup(token) {
             switch rule.action {
@@ -328,7 +375,12 @@ actor ConfidenceRouter {
 
         // -- STEP 0: Score-based decision (layout + language via conversions + n-grams + lexicon) --
         // This is deterministic and fixes cases where CoreML/NL miss the layout mismatch.
-        if let scored = scoredDecision(token: token, activeLayouts: activeLayouts, mode: mode) {
+        if let scored = scoredDecision(
+            token: token,
+            activeLayouts: activeLayouts,
+            mode: mode,
+            enabledLanguages: enabledLanguages
+        ) {
             let stdThreshold = await settings.standardPathThreshold
             if scored.confidence >= stdThreshold {
                 DecisionLogger.shared.logDecision(token: token, path: "SCORE", result: scored)
@@ -451,15 +503,19 @@ actor ConfidenceRouter {
                             return true
                         }
 
-                        return targetNorm >= thresholds.targetNormMin && targetNorm >= sourceNorm + thresholds.targetNormMargin && (targetFreq >= sourceFreq || targetWordConfidence >= thresholds.shortWordFreqMin)
+                        // N-grams alone also "like" letter soup; require the target to be a word we
+                        // know of at all (0 >= 0 would otherwise pass for unknown source words).
+                        return targetNorm >= thresholds.targetNormMin && targetNorm >= sourceNorm + thresholds.targetNormMargin && ((targetFreq > 0 && targetFreq >= sourceFreq) || targetWordConfidence >= thresholds.shortWordFreqMin)
                     }
 
                     func correctionHypotheses(for sourceLayout: Language) -> [LanguageHypothesis] {
+                        let all: [LanguageHypothesis]
                         switch sourceLayout {
-                        case .english: return [.ruFromEnLayout, .heFromEnLayout]
-                        case .russian: return [.enFromRuLayout, .heFromRuLayout]
-                        case .hebrew: return [.enFromHeLayout, .ruFromHeLayout]
+                        case .english: all = [.ruFromEnLayout, .heFromEnLayout]
+                        case .russian: all = [.enFromRuLayout, .heFromRuLayout]
+                        case .hebrew: all = [.enFromHeLayout, .ruFromHeLayout]
                         }
+                        return all.filter { $0.isAllowed(in: enabledLanguages) }
                     }
 
                     struct ValidatedCandidate {
@@ -652,7 +708,12 @@ actor ConfidenceRouter {
         // -- STEP 3: Fall back to baseline --
         // Heuristic correction: if the token looks like gibberish in its dominant script,
         // try layout conversions even when CoreML doesn't propose a `_from_` hypothesis.
-        if let heuristic = heuristicCorrection(token: token, baseline: baseline, activeLayouts: activeLayouts) {
+        if let heuristic = heuristicCorrection(
+            token: token,
+            baseline: baseline,
+            activeLayouts: activeLayouts,
+            enabledLanguages: enabledLanguages
+        ) {
             DecisionLogger.shared.logDecision(token: token, path: "HEURISTIC", result: heuristic)
             return heuristic
         }
@@ -689,8 +750,9 @@ actor ConfidenceRouter {
         }
         
         let activeLayouts = await settings.activeLayouts
+        let enabledLanguages = await settings.enabledLanguages
         
-        for hyp in candidates {
+        for hyp in candidates where hyp.isAllowed(in: enabledLanguages) {
              let target = hyp.targetLanguage
              let source = dominant
              
@@ -1014,7 +1076,7 @@ actor ConfidenceRouter {
         }
 
         // Fallback: accept when n-gram quality improves significantly
-        if targetNorm >= thresholds.targetNormMin && targetNorm >= sourceNorm + thresholds.targetNormMargin && (targetFreq >= sourceFreq || targetWord >= thresholds.shortWordFreqMin) {
+        if targetNorm >= thresholds.targetNormMin && targetNorm >= sourceNorm + thresholds.targetNormMargin && ((targetFreq > 0 && targetFreq >= sourceFreq) || targetWord >= thresholds.shortWordFreqMin) {
             return LanguageDecision(language: targetLanguage, layoutHypothesis: hypothesis, confidence: max(confidence, 0.80), scores: [:])
         }
 
@@ -1024,7 +1086,8 @@ actor ConfidenceRouter {
     private func heuristicCorrection(
         token: String,
         baseline: LanguageDecision,
-        activeLayouts: [String: String]
+        activeLayouts: [String: String],
+        enabledLanguages: Set<Language>
     ) -> LanguageDecision? {
         guard let dominant = dominantScriptLanguage(token) else { return nil }
 
@@ -1054,7 +1117,7 @@ actor ConfidenceRouter {
         // If only one validates, return it (Fast Path).
         var validDecisions: [LanguageDecision] = []
 
-        for hyp in candidates {
+        for hyp in candidates where hyp.isAllowed(in: enabledLanguages) {
             if let validated = validateCorrection(token: token, hypothesis: hyp, confidence: baseConf, activeLayouts: activeLayouts) {
                 validDecisions.append(validated)
             }
@@ -1101,7 +1164,12 @@ actor ConfidenceRouter {
         return ["כ", "מ", "נ", "פ", "צ"].contains(String(last))
     }
 
-    private func scoredDecision(token: String, activeLayouts: [String: String], mode: DetectionMode) -> LanguageDecision? {
+    private func scoredDecision(
+        token: String,
+        activeLayouts: [String: String],
+        mode: DetectionMode,
+        enabledLanguages: Set<Language>
+    ) -> LanguageDecision? {
 
         // Tuning constants for scored decision
         let correctionBias = 0.05         // Small bias against corrections to avoid false positives
@@ -1139,7 +1207,7 @@ actor ConfidenceRouter {
         let dominant = dominantScriptLanguage(token)
 
         var best: Candidate? = nil
-        for (hyp, source, target) in mapped {
+        for (hyp, source, target) in mapped where hyp.isAllowed(in: enabledLanguages) {
             // Script gate: don't consider hypotheses whose source script doesn't match the token.
             // This prevents false positives for already-correct text with punctuation (e.g. "how,what").
             if let dominant, dominant != source { continue }

@@ -1,4 +1,5 @@
 import Foundation
+import Carbon
 
 @MainActor
 public final class SettingsManager: ObservableObject {
@@ -129,6 +130,48 @@ public final class SettingsManager: ObservableObject {
     /// Ticket 72: Foundation Model classifier for ambiguous tokens (macOS 26+).
     @Published var isFoundationModelEnabled: Bool {
         didSet { UserDefaults.standard.set(isFoundationModelEnabled, forKey: "isFoundationModelEnabled") }
+    }
+
+    // MARK: - Working languages
+
+    /// Languages chosen by the user; `nil` follows the keyboard layouts enabled in macOS.
+    @Published var customEnabledLanguages: Set<Language>? {
+        didSet {
+            if let customEnabledLanguages {
+                UserDefaults.standard.set(customEnabledLanguages.map(\.rawValue).sorted(), forKey: "enabledLanguages")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "enabledLanguages")
+            }
+        }
+    }
+
+    /// Languages with a keyboard layout enabled in macOS.
+    @Published private(set) var systemKeyboardLanguages: Set<Language> = Set(Language.allCases)
+
+    private var enabledInputSourcesObserver: Any?
+
+    /// Languages RightLayout detects, converts to and switches between. Words are never
+    /// "corrected" into, or out of, any other language.
+    var enabledLanguages: Set<Language> {
+        customEnabledLanguages ?? systemKeyboardLanguages
+    }
+
+    func refreshSystemKeyboardLanguages() {
+        let detected = InputSourceManager.shared.enabledKeyboardLanguages()
+        // If nothing we know is detected, don't lock the user out of every language.
+        systemKeyboardLanguages = detected.isEmpty ? Set(Language.allCases) : detected
+    }
+
+    private func observeEnabledInputSources() {
+        enabledInputSourcesObserver = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name(kTISNotifyEnabledKeyboardInputSourcesChanged as String),
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                SettingsManager.shared.refreshSystemKeyboardLanguages()
+            }
+        }
     }
 
     /// When Enter ends a word that needs correcting, fix the word and swallow that Enter
@@ -337,6 +380,8 @@ public final class SettingsManager: ObservableObject {
         self.checkForUpdatesAutomatically = UserDefaults.standard.object(forKey: "checkForUpdatesAutomatically") as? Bool ?? true
 
         self.holdEnterForCorrection = UserDefaults.standard.object(forKey: "holdEnterForCorrection") as? Bool ?? true
+        self.customEnabledLanguages = (UserDefaults.standard.stringArray(forKey: "enabledLanguages"))
+            .map { Set($0.compactMap(Language.init(rawValue:))) }
 
         let storedMinLength = UserDefaults.standard.object(forKey: "minAutoCorrectWordLength") as? Int
             ?? AutoCorrectionLimits.default.minimumWordLength
@@ -382,6 +427,8 @@ public final class SettingsManager: ObservableObject {
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
            ProcessInfo.processInfo.environment["RightLayout_DISABLE_LAYOUT_AUTODETECT"] != "1" {
             detectAndUpdateLayouts()
+            refreshSystemKeyboardLanguages()
+            observeEnabledInputSources()
         }
         
         // Initialize resource bundle now that all properties are set
@@ -433,6 +480,7 @@ public final class SettingsManager: ObservableObject {
     /// Re-runs layout auto-detection and persists the results.
     func autoDetectLayouts() {
         detectAndUpdateLayouts()
+        refreshSystemKeyboardLanguages()
     }
 }
 
