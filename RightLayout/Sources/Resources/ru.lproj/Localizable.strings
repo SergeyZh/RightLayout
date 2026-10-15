@@ -395,3 +395,10 @@
 "No manual rules yet" = "Пока нет ручных правил";
 "Add an explicit rule when a specific word should always stay unchanged or prefer one language." = "Добавьте явное правило, если конкретное слово всегда должно оставаться без изменений или предпочитать один язык.";
 "Estimated from correction events" = "Оценка по событиям исправления";
+"Running from Terminal" = "Запуск из Терминала";
+"RightLayout was started outside of its app bundle, so macOS checks the permission of the app that launched it. Enable Accessibility for Terminal (or iTerm) instead, then restart it." = "RightLayout запущен не как приложение (.app), поэтому macOS проверяет разрешение у программы, из которой он запущен. Включите Accessibility для Терминала (или iTerm) и перезапустите его.";
+"Already enabled?" = "Уже включено?";
+"If RightLayout is already switched on in the list but this window doesn't change, the entry belongs to a previous build or installation. Reset it, then enable RightLayout again." = "Если RightLayout в списке уже включён, а это окно не меняется, запись относится к предыдущей сборке или установке. Сбросьте её и включите RightLayout заново.";
+"Reset Permission" = "Сбросить разрешение";
+"The old entry was removed. Enable RightLayout in the list that opens." = "Старая запись удалена. Включите RightLayout в открывшемся списке.";
+"Could not reset automatically. Run this in Terminal, then reopen RightLayout:" = "Не удалось сбросить автоматически. Выполните в Терминале и снова откройте RightLayout:";
