@@ -6,6 +6,8 @@ struct WordFrequencyModel: Sendable {
     private let logCountByWord: [String: Float]
     private let invMaxLogCount: Float
 
+    static let minimumWordLength = 3
+
     /// Returns the bundled model for `lang` ("en", "ru", "he"), parsing it at most once per process.
     /// The lists are ~200k lines each and several components consult them, so they share one copy.
     static func shared(_ lang: String) -> WordFrequencyModel? {
@@ -70,6 +72,11 @@ struct WordFrequencyModel: Sendable {
                 maxLog = logCount
                 hasMax = true
             }
+
+            // One- and two-letter entries are mostly abbreviations and noise ("пп", "gg", "cj"),
+            // and short tokens are exactly where layouts collide, so leave them to the curated
+            // lexicon in language_data.json.
+            guard word.count >= minimumWordLength else { continue }
 
             // Keep the first (highest-frequency) occurrence in case of duplicates.
             if out[word] == nil {
