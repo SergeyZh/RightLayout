@@ -357,6 +357,31 @@ public final class LayoutMapper: @unchecked Sendable {
         return scalars.map(Character.init)
     }
     
+    /// What the key of punctuation `c` types in the target layout, when that is sentence
+    /// punctuation too. "?" typed on US is Shift+/, the comma on Russian PC ("Lf?" → "Да,"),
+    /// while "?" typed on Russian PC is Shift+7, which stays "?" rather than becoming "&".
+    private func sentencePunctuation(
+        for c: Character,
+        sourceMap: [Character: (key: String, mod: String)],
+        fullMap: [String: [String: KeyMapping]],
+        toLayout: String
+    ) -> Character? {
+        let sentencePunctuation: Set<Character> = [".", ",", ";", ":", "!", "?"]
+        guard let (keyCode, mod) = sourceMap[c],
+              let mapping = fullMap[keyCode]?[toLayout] else { return nil }
+        let target: String?
+        switch mod {
+        case "n": target = mapping.n
+        case "s": target = mapping.s
+        case "a": target = mapping.a
+        case "sa": target = mapping.sa
+        default: target = nil
+        }
+        guard let target, target.count == 1, let ch = target.first,
+              sentencePunctuation.contains(ch) else { return nil }
+        return ch
+    }
+
     /// Converts text from source layout to target layout
     public func convert(_ text: String, fromLayout: String, toLayout: String) -> String? {
         if fromLayout == toLayout { return text }
@@ -420,7 +445,7 @@ public final class LayoutMapper: @unchecked Sendable {
                         }
                         
                         if shouldPreserve {
-                            result.append(c)
+                            result.append(sentencePunctuation(for: c, sourceMap: sourceMap, fullMap: fullMap, toLayout: toLayout) ?? c)
                             lastWasLetter = false
                             continue
                         }
@@ -557,7 +582,7 @@ public final class LayoutMapper: @unchecked Sendable {
                     
                     if shouldPreserve {
                         flushBuffer()
-                        result.append(c)
+                        result.append(sentencePunctuation(for: c, sourceMap: sourceMap, fullMap: fullMap, toLayout: toLayout) ?? c)
                         continue
                     }
                 }

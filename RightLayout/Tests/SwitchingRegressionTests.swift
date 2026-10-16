@@ -103,7 +103,16 @@ final class SwitchingRegressionTests: XCTestCase {
         guard case .autoReplace(let candidate) = planned.plan else {
             return XCTFail("Lf? was not auto-corrected: \(String(describing: planned.plan))")
         }
-        XCTAssertEqual(candidate.replacement, "Да?")
+        XCTAssertEqual(candidate.replacement, "Да,")
+    }
+
+    func testQuestionMarkKeyIsTheCommaOnRussianPC() {
+        XCTAssertEqual(LayoutMapper.shared.convert("Lf?", fromLayout: "us", toLayout: "russianwin"), "Да,")
+        XCTAssertEqual(LayoutMapper.shared.convert("Ghbdtn? rfr ltkf", fromLayout: "us", toLayout: "russianwin"), "Привет, как дела")
+        // On the Mac Russian layout the same key is still the question mark.
+        XCTAssertEqual(LayoutMapper.shared.convert("Lf?", fromLayout: "us", toLayout: "russian"), "Да?")
+        // "?" typed on Russian PC (Shift+7) stays a question mark, not "&".
+        XCTAssertEqual(LayoutMapper.shared.convert("Руддщ?", fromLayout: "russianwin", toLayout: "us"), "Hello?")
     }
 
     func testEnglishWordWithQuestionMarkIsLeftAlone() async {

@@ -146,7 +146,7 @@ actor ConfidenceRouter {
     /// the bare word is also an English abbreviation: nobody ends an English word
     /// with "/" or "&".
     ///
-    /// Other sentence punctuation ("Lf?" → "Да?") ends the sentence too, so no later
+    /// Other sentence punctuation ("Lf?" → "Да,") ends the sentence too, so no later
     /// word will settle it; there the bare word must be a common Russian word and not
     /// a common English one.
     private func wrongLayoutPunctuationDecision(
