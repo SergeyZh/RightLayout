@@ -4,7 +4,7 @@ Planned work for this fork. Done items move to the release notes.
 
 ## Distribution: Developer ID signing, notarization, DMG
 
-**Status:** planned (the Apple Developer account is available).
+**Status:** implemented (steps 1–7 in `release.yml` and `releases/build_release.sh`; the secrets of step 1 must be set in the repository). Left: steps 8–9 with the first signed release.
 
 **Why.** Releases are currently unsigned and shipped as a `.pkg`:
 

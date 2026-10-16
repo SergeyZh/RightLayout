@@ -83,7 +83,7 @@ public final class LayoutMapper: @unchecked Sendable {
     }
     
     private func loadLayoutData() {
-        guard let url = Bundle.module.url(forResource: "layouts", withExtension: "json") else {
+        guard let url = Bundle.rightLayoutResources.url(forResource: "layouts", withExtension: "json") else {
             print("LayoutMapper: Could not find layouts.json in bundle.")
             return
         }

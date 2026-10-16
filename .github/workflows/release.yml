@@ -2,24 +2,13 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version (e.g., 1.0.0). Leave empty to auto-increment patch.'
-        required: false
-        type: string
-      release_type:
-        description: 'Release type'
-        required: true
-        default: 'patch'
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
 
 jobs:
   build:
     runs-on: macos-26
+    # Signing secrets live in the "release" environment, which only main can deploy to,
+    # so workflows from other branches and PRs can't read them.
+    environment: release
     permissions:
       contents: write
     
@@ -32,27 +21,47 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
-          else
-            LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-            LATEST=${LATEST#v}
-            
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
-            
-            case "${{ inputs.release_type }}" in
-              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-              patch) PATCH=$((PATCH + 1)) ;;
-            esac
-            
-            VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          fi
-          
+          # Build time in UTC, e.g. 20261016.205332 (see scripts/build_version.sh).
+          VERSION=$(./scripts/build_version.sh)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Building version: $VERSION"
       
-      - name: Build release
+      - name: Import signing certificate
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          # A throwaway keychain that only lives for this job.
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/certificate.p12"
+
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)
+          [ -n "$IDENTITY" ] || { echo "No Developer ID Application identity in the certificate"; exit 1; }
+          echo "SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PATH=$KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Write notarization key
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          echo "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/notary_key.p8"
+          echo "NOTARY_KEY_PATH=$RUNNER_TEMP/notary_key.p8" >> "$GITHUB_ENV"
+
+      - name: Build, sign and notarize
+        env:
+          NOTARY_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ./rightlayout.sh release build --version "$VERSION"
@@ -67,23 +76,31 @@ jobs:
       
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          # The job's own token can publish here: the releases go to this same repository.
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG="v$VERSION"
-          PKG_PATH="releases/RightLayout-SergeyZh-$VERSION.pkg"
+          DMG_PATH="releases/RightLayout-SergeyZh-$VERSION.dmg"
           RELEASES_REPO="SergeyZh/RightLayout"
-          NOTES_PATH="releases/notes/$TAG.md"
+          # Tags are build times, so notes for the coming release live in next.md.
+          NOTES_PATH="releases/notes/next.md"
 
           if [ -f "$NOTES_PATH" ]; then
             NOTES_ARGS=(--notes-file "$NOTES_PATH")
           else
-            NOTES_ARGS=(--notes "RightLayout SergeyZh $TAG — SergeyZh's build of RightLayout (a fork of chernistry/RightLayout, not the official app). Download and run the installer. macOS 13.0+ required.")
+            NOTES_ARGS=(--notes "RightLayout SergeyZh $TAG — SergeyZh's build of RightLayout (a fork of chernistry/RightLayout, not the official app). Download the DMG and drag the app to Applications. macOS 13.0+ required.")
           fi
           
-          gh release create "$TAG" "$PKG_PATH" \
+          gh release create "$TAG" "$DMG_PATH" \
             --repo "$RELEASES_REPO" \
             --title "RightLayout SergeyZh $TAG" \
             "${NOTES_ARGS[@]}"
           
           echo "✅ Published to https://github.com/$RELEASES_REPO/releases/tag/$TAG"
+
+      - name: Clean up signing material
+        if: always()
+        run: |
+          [ -n "$KEYCHAIN_PATH" ] && security delete-keychain "$KEYCHAIN_PATH" || true
+          rm -f "$RUNNER_TEMP/notary_key.p8" "$RUNNER_TEMP/certificate.p12"

@@ -340,20 +340,20 @@ public final class SettingsManager: ObservableObject {
         }
     }
     
-    @Published var resourceBundle: Bundle = .module
+    @Published var resourceBundle: Bundle = .rightLayoutResources
     
     private func updateResourceBundle() {
         let localization = resolvedLocalizationCode()
         print("[SettingsManager] Updating resource bundle for language: \(appLanguage.rawValue) -> \(localization ?? "module-default")")
 
         if let localization,
-           let path = Bundle.module.path(forResource: localization, ofType: "lproj"),
+           let path = Bundle.rightLayoutResources.path(forResource: localization, ofType: "lproj"),
            let bundle = Bundle(path: path) {
             print("[SettingsManager] Found bundle at: \(path)")
             self.resourceBundle = bundle
         } else {
             print("[SettingsManager] Could not find bundle for \(appLanguage.rawValue). Falling back to .module")
-            self.resourceBundle = .module
+            self.resourceBundle = .rightLayoutResources
         }
     }
 
@@ -362,7 +362,7 @@ public final class SettingsManager: ObservableObject {
             return appLanguage.rawValue
         }
 
-        let available = Set(Bundle.module.localizations.filter { $0 != "Base" })
+        let available = Set(Bundle.rightLayoutResources.localizations.filter { $0 != "Base" })
         let preferredCodes = Locale.preferredLanguages.compactMap { preferred in
             let locale = Locale(identifier: preferred)
             if #available(macOS 13.0, *) {

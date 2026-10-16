@@ -32,7 +32,7 @@ struct WordFrequencyModel: Sendable {
 
     private static func resourceURL(_ lang: String) -> URL? {
         #if SWIFT_PACKAGE
-        let bundle = Bundle.module
+        let bundle = Bundle.rightLayoutResources
         #else
         let bundle = Bundle.main
         #endif

@@ -39,7 +39,7 @@ final class CorrectionSoundPlayer {
 
     nonisolated static func url(for sound: SettingsManager.CorrectionSound) -> URL? {
         let name = "correction_\(sound.rawValue)"
-        return Bundle.module.url(forResource: name, withExtension: "wav", subdirectory: "Sounds")
-            ?? Bundle.module.url(forResource: name, withExtension: "wav")
+        return Bundle.rightLayoutResources.url(forResource: name, withExtension: "wav", subdirectory: "Sounds")
+            ?? Bundle.rightLayoutResources.url(forResource: name, withExtension: "wav")
     }
 }
