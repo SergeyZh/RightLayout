@@ -3,10 +3,12 @@ import XCTest
 
 final class PrecedenceRegressionTests: XCTestCase {
     
-    // Helper to load model from absolute path avoiding Bundle issues in test
+    // Helper to load model from the source tree, avoiding Bundle issues in test
     func loadModel(_ lang: String) throws -> NgramLanguageModel {
-        let path = "Resources/LanguageModels/\(lang)_trigrams.json"
-        let url = URL(fileURLWithPath: path)
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Resources/LanguageModels/\(lang)_trigrams.json")
         return try NgramLanguageModel.loadFrom(jsonURL: url)
     }
 
