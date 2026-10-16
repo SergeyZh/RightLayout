@@ -1170,6 +1170,21 @@ actor ConfidenceRouter {
         return ["כ", "מ", "נ", "פ", "צ"].contains(String(last))
     }
 
+    /// `converted` with every "." or "," that sits between two letters of `token` put back,
+    /// or nil when there is no such separator (or the conversion changed the length).
+    private func keepingSeparators(of token: String, in converted: String) -> String? {
+        let original = Array(token)
+        var result = Array(converted)
+        guard original.count == result.count, original.count >= 3 else { return nil }
+        var changed = false
+        for i in 1..<(original.count - 1) where original[i] == "." || original[i] == "," {
+            guard original[i - 1].isLetter, original[i + 1].isLetter, result[i] != original[i] else { continue }
+            result[i] = original[i]
+            changed = true
+        }
+        return changed ? String(result) : nil
+    }
+
     private func scoredDecision(
         token: String,
         activeLayouts: [String: String],
@@ -1220,7 +1235,16 @@ actor ConfidenceRouter {
 
             // Try ALL target layout variants to handle cases like Hebrew QWERTY user typing Mac Hebrew patterns
             let variants = LayoutMapper.shared.convertAllVariants(token, from: source, to: target, activeLayouts: activeLayouts)
-            for (_, converted) in variants {
+            // "." and "," between two words may be separators rather than mapped letters
+            // ("ghbdtn.rfr" is "привет.как", not "приветюкак"), so also score each
+            // conversion with them kept as typed.
+            var readings: [String] = []
+            for variant in variants {
+                for reading in [variant.result, keepingSeparators(of: token, in: variant.result)] {
+                    if let reading, !readings.contains(reading) { readings.append(reading) }
+                }
+            }
+            for converted in readings {
                 guard converted != token else { continue }
                 let targetWord = wordValidator.confidence(for: converted, language: target)
                 let targetFreq = frequencyScore(converted, language: target)
