@@ -50,6 +50,23 @@ final class UpdateCheckerTests: XCTestCase {
         }
     }
     
+    func test_version_comparison_build_time_newer_than_semver() async {
+        // Build-time versions (YYYYMMDD.HHMMSS) must be offered to users on 1.3
+        let result = await UpdateChecker.shared.compareVersions("1.3", "20261016.205332")
+        XCTAssertEqual(result, .orderedAscending)
+    }
+
+    func test_version_comparison_build_time_leading_zero_time() async {
+        // 09:05:01 parses as 90501 and is still earlier than 20:53:32 the same day
+        let result = await UpdateChecker.shared.compareVersions("20261016.090501", "20261016.205332")
+        XCTAssertEqual(result, .orderedAscending)
+    }
+
+    func test_version_comparison_build_time_next_day() async {
+        let result = await UpdateChecker.shared.compareVersions("20261016.235959", "20261017.000001")
+        XCTAssertEqual(result, .orderedAscending)
+    }
+
     func test_version_comparison_major_version() {
         // Test: 2.0 > 1.99
         Task {

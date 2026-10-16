@@ -13,11 +13,11 @@ PKG_BASENAME="RightLayout-SergeyZh"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Read version from VERSION file or use argument
+# Use the version from the argument, or the build time (YYYYMMDD.HHMMSS, UTC)
 if [ -n "$1" ] && [ "$1" != "--publish" ]; then
     VERSION="$1"
 else
-    VERSION=$(cat "$PROJECT_DIR/VERSION" | tr -d '[:space:]')
+    VERSION=$("$PROJECT_DIR/scripts/build_version.sh")
 fi
 
 BUILD_DIR="$SCRIPT_DIR/build"

@@ -25,11 +25,6 @@ warn() { say "${COLOR_YELLOW}$*${COLOR_RESET}"; }
 err() { say "${COLOR_RED}$*${COLOR_RESET}" >&2; }
 die() { err "ERROR: $*"; exit 1; }
 
-sync_version_metadata() {
-  local version="$1"
-  (cd "${ROOT_DIR}" && ./scripts/sync_version.sh "${version}")
-}
-
 file_mtime() {
   local path="$1"
   if [[ ! -e "$path" ]]; then
@@ -73,7 +68,7 @@ Commands:
   corpus extract-wikipedia --lang ru|en|he
   corpus import-telegram --file result.json
   logs stream            Stream system logs
-  release build --version X.Y.Z
+  release build [--version V]  (default: build time, YYYYMMDD.HHMMSS UTC)
   release github         Trigger GitHub release workflow
   release status         Check commits since last release
 
@@ -150,9 +145,7 @@ interactive_menu() {
     "corpus download-subtitles") cmd_corpus_download_subtitles ;;
     "logs stream") cmd_logs_stream ;;
     "release build")
-      echo ""
-      read -rp "Version (e.g. 1.0.0): " ver
-      [[ -n "$ver" ]] && cmd_release_build --version "$ver"
+      cmd_release_build
       ;;
     "release github") cmd_release_github ;;
     "release status") cmd_release_status ;;
@@ -618,23 +611,14 @@ cmd_release_build() {
       *) die "Unknown flag for release build: $1" ;;
     esac
   done
-  [[ -n "${version}" ]] || die "release build requires --version X.Y.Z"
-  info "Building release DMG..."
+  [[ -n "${version}" ]] || version="$("${ROOT_DIR}/scripts/build_version.sh")"
+  info "Building release ${version}..."
   (cd "${ROOT_DIR}/releases" && ./build_release.sh "${version}")
 }
 
 cmd_release_github() {
-  local release_type="patch"
-  local version=""
-  
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --type) release_type="$2"; shift 2 ;;
-      --version) version="$2"; shift 2 ;;
-      *) die "Unknown flag: $1. Use --type [patch|minor|major] or --version X.Y.Z" ;;
-    esac
-  done
-  
+  [[ $# -eq 0 ]] || die "release github takes no options: the version is the build time, set by the workflow"
+
   # Check gh CLI
   if ! command -v gh &>/dev/null; then
     die "GitHub CLI (gh) not installed. Run: brew install gh"
@@ -644,41 +628,10 @@ cmd_release_github() {
   if ! gh auth status &>/dev/null; then
     die "Not authenticated. Run: gh auth login"
   fi
-  
-  # Get latest tag from GitHub releases (more reliable than local tags)
-  local latest=$(gh release list --repo SergeyZh/RightLayout --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "v0.0")
-  latest=${latest#v}
-  
-  # Handle X.Y format (no patch)
-  IFS='.' read -r major minor patch <<< "$latest"
-  patch=${patch:-0}
-  
-  case "$release_type" in
-    major) major=$((major + 1)); minor=0 ;;
-    minor) minor=$((minor + 1)) ;;
-    patch) ;; # Not used in new X.Y format
-  esac
-  
-  local suggested="${major}.${minor}"
-  
-  if [[ -z "$version" ]]; then
-    echo ""
-    info "Latest release: ${COLOR_YELLOW}v${latest}${COLOR_RESET}"
-    info "Suggested next (${release_type}): ${COLOR_GREEN}v${suggested}${COLOR_RESET}"
-    echo ""
-    read -p "Version to release [${suggested}]: " version
-    version=${version:-$suggested}
-  fi
 
-  info "Syncing local version metadata to ${version}..."
-  sync_version_metadata "${version}"
+  info "Triggering GitHub Actions release (version = build time, YYYYMMDD.HHMMSS UTC)..."
   
-  info "Triggering GitHub Actions release for v${version}..."
-  
-  gh workflow run release.yml \
-    --repo SergeyZh/RightLayout \
-    --field version="${version}" \
-    --field release_type="${release_type}"
+  gh workflow run release.yml --repo SergeyZh/RightLayout
   
   success "Release workflow triggered!"
   info "Watch progress: gh run watch --repo SergeyZh/RightLayout"

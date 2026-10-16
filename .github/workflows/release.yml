@@ -2,20 +2,6 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version (e.g., 1.0.0). Leave empty to auto-increment patch.'
-        required: false
-        type: string
-      release_type:
-        description: 'Release type'
-        required: true
-        default: 'patch'
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
 
 jobs:
   build:
@@ -32,23 +18,8 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
-          else
-            LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-            LATEST=${LATEST#v}
-            
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
-            
-            case "${{ inputs.release_type }}" in
-              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-              patch) PATCH=$((PATCH + 1)) ;;
-            esac
-            
-            VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          fi
-          
+          # Build time in UTC, e.g. 20261016.205332 (see scripts/build_version.sh).
+          VERSION=$(./scripts/build_version.sh)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Building version: $VERSION"
       
