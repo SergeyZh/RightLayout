@@ -164,8 +164,10 @@ public final class EventMonitor {
     private let keyEventPoster = CGEventPoster()
 
     private static let returnKeyCodes: Set<CGKeyCode> = [36, 76]
-    /// Upper bound for holding Enter while the correction is being decided.
-    private static let heldEnterTimeout: UInt64 = 500_000_000
+    /// Upper bound for holding Enter while the word is decided and read back. Slack and
+    /// other Electron apps can take several hundred milliseconds to answer Accessibility
+    /// reads; with a shorter limit the Enter went out with the word uncorrected.
+    private static let heldEnterTimeout: UInt64 = 1_500_000_000
 
     /// Delay before re-reading the focused text after cursor movement or other external
     /// changes. Reading it synchronously from the event tap stalls every keystroke.

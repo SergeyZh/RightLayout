@@ -90,16 +90,4 @@ final class HoldEnterShortWordTests: XCTestCase {
     func testGptAndSpace() async throws {
         try await check([5, 35, 17], word: "пзе", expected: "gpt", terminator: 49)
     }
-
-    func testDiagDecisionLatency() async {
-        var report: [String] = []
-        for word in ["ghbdtn", "Lf/", "пзе", "ghbdtn", "Lf/", "пзе"] {
-            await engine.clearHistory()
-            await engine.resetCycling()
-            let start = Date()
-            _ = await engine.planCorrection(word, editingEnvironment: .accessibility)
-            report.append("\(word)=\(Int(Date().timeIntervalSince(start) * 1000))ms")
-        }
-        XCTFail("DIAG latency \(report.joined(separator: " "))")
-    }
 }
