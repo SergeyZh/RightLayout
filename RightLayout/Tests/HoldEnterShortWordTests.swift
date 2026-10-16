@@ -90,4 +90,20 @@ final class HoldEnterShortWordTests: XCTestCase {
     func testGptAndSpace() async throws {
         try await check([5, 35, 17], word: "пзе", expected: "gpt", terminator: 49)
     }
+
+    /// With the conservative style a short word only gets a suggestion. On a held Enter
+    /// there is no next word to confirm it, so the suggestion is applied before sending.
+    func testConservativeShortWordSuggestionIsAppliedOnEnter() async throws {
+        let originalPreset = settings.behaviorPreset
+        settings.behaviorPreset = .conservative
+        defer { settings.behaviorPreset = originalPreset }
+
+        let planned = await engine.planCorrection("Lf/", editingEnvironment: .accessibility)
+        guard case .hint = planned.plan else {
+            return XCTFail("expected a suggestion for Lf/ in the conservative style, got \(planned.plan)")
+        }
+        await engine.resetCycling()
+        try await check([37, 3, 44], word: "Lf/", expected: "Да.", terminator: 36)
+        XCTAssertEqual(eventMonitor.releasedEnterCount, 0)
+    }
 }
