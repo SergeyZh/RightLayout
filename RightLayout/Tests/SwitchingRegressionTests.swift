@@ -95,7 +95,7 @@ final class SwitchingRegressionTests: XCTestCase {
             await engine.resetCycling()
             let planned = await engine.planCorrection(t, editingEnvironment: .accessibility)
             let e = planned.result.evidence
-            print("DIAG \(t): plan=\(planned.plan) conf=\(String(describing: planned.result.confidence)) hyp=\(String(describing: e?.decision.layoutHypothesis)) kind=\(String(describing: e?.tokenKind)) conv=\(String(describing: e?.convertedText)) margin=\(String(describing: e?.winnerMargin)) wl=\(String(describing: e?.isWhitelistedShort))")
+            XCTFail("DIAG \(t): plan=\(planned.plan) conf=\(String(describing: planned.result.confidence)) hyp=\(String(describing: e?.decision.layoutHypothesis)) kind=\(String(describing: e?.tokenKind)) conv=\(String(describing: e?.convertedText)) margin=\(String(describing: e?.winnerMargin)) wl=\(String(describing: e?.isWhitelistedShort))")
         }
     }
 
