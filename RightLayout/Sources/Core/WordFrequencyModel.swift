@@ -6,16 +6,46 @@ struct WordFrequencyModel: Sendable {
     private let logCountByWord: [String: Float]
     private let invMaxLogCount: Float
 
-    static func loadLanguage(_ lang: String) throws -> WordFrequencyModel {
+    static let minimumWordLength = 3
+
+    /// Returns the bundled model for `lang` ("en", "ru", "he"), parsing it at most once per process.
+    /// The lists are ~200k lines each and several components consult them, so they share one copy.
+    static func shared(_ lang: String) -> WordFrequencyModel? {
+        cache.model(for: lang)
+    }
+
+    private static let cache = Cache()
+
+    private final class Cache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var models: [String: WordFrequencyModel?] = [:]
+
+        func model(for lang: String) -> WordFrequencyModel? {
+            lock.lock()
+            defer { lock.unlock() }
+            if let cached = models[lang] { return cached }
+            let model = try? WordFrequencyModel.loadLanguage(lang)
+            models[lang] = .some(model)
+            return model
+        }
+    }
+
+    private static func resourceURL(_ lang: String) -> URL? {
         #if SWIFT_PACKAGE
-        guard let url = Bundle.module.url(forResource: "\(lang)_unigrams", withExtension: "tsv", subdirectory: "LanguageModels") else {
-            throw LexiconError.resourceNotFound(lang)
-        }
+        let bundle = Bundle.module
         #else
-        guard let url = Bundle.main.url(forResource: "\(lang)_unigrams", withExtension: "tsv", subdirectory: "LanguageModels") else {
+        let bundle = Bundle.main
+        #endif
+        // SwiftPM's `.process` rule flattens Resources/LanguageModels into the bundle root,
+        // while an Xcode folder reference would keep the subdirectory, so try both.
+        return bundle.url(forResource: "\(lang)_unigrams", withExtension: "tsv")
+            ?? bundle.url(forResource: "\(lang)_unigrams", withExtension: "tsv", subdirectory: "LanguageModels")
+    }
+
+    static func loadLanguage(_ lang: String) throws -> WordFrequencyModel {
+        guard let url = resourceURL(lang) else {
             throw LexiconError.resourceNotFound(lang)
         }
-        #endif
 
         let data = try Data(contentsOf: url)
         guard let text = String(data: data, encoding: .utf8) else {
@@ -42,6 +72,11 @@ struct WordFrequencyModel: Sendable {
                 maxLog = logCount
                 hasMax = true
             }
+
+            // One- and two-letter entries are mostly abbreviations and noise ("пп", "gg", "cj"),
+            // and short tokens are exactly where layouts collide, so leave them to the curated
+            // lexicon in language_data.json.
+            guard word.count >= minimumWordLength else { continue }
 
             // Keep the first (highest-frequency) occurrence in case of duplicates.
             if out[word] == nil {

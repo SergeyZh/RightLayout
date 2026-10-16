@@ -38,6 +38,22 @@ final class ModelLoadingTests: XCTestCase {
             }
         }
     }
-    
 
+    // The word-frequency lists used to be looked up in a "LanguageModels" subdirectory that
+    // SwiftPM flattens away, so they silently never loaded.
+    func testWordFrequencyListsLoad() throws {
+        let ru = try XCTUnwrap(WordFrequencyModel.shared("ru"), "ru_unigrams.tsv should load")
+        XCTAssertTrue(ru.contains("раскладка"))
+        XCTAssertGreaterThan(ru.score("привет"), 0.0)
+
+        let en = try XCTUnwrap(WordFrequencyModel.shared("en"), "en_unigrams.tsv should load")
+        XCTAssertTrue(en.contains("hello"))
+
+        let he = try XCTUnwrap(WordFrequencyModel.shared("he"), "he_unigrams.tsv should load")
+        XCTAssertTrue(he.contains("שלום"))
+    }
+
+    func testMissingWordFrequencyListIsNil() {
+        XCTAssertNil(WordFrequencyModel.shared("xx"))
+    }
 }

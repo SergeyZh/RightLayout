@@ -953,7 +953,7 @@ actor ConfidenceRouter {
         case .russian: code = "ru"
         case .hebrew: code = "he"
         }
-        guard let model = try? WordFrequencyModel.loadLanguage(code) else { return nil }
+        guard let model = WordFrequencyModel.shared(code) else { return nil }
         unigramCache[language] = model
         return model
     }

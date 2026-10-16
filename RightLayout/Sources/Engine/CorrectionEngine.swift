@@ -84,9 +84,9 @@ package actor CorrectionEngine {
 
     lazy var unigramModels: [Language: WordFrequencyModel] = {
         var out: [Language: WordFrequencyModel] = [:]
-        if let ru = try? WordFrequencyModel.loadLanguage("ru") { out[.russian] = ru }
-        if let en = try? WordFrequencyModel.loadLanguage("en") { out[.english] = en }
-        if let he = try? WordFrequencyModel.loadLanguage("he") { out[.hebrew] = he }
+        if let ru = WordFrequencyModel.shared("ru") { out[.russian] = ru }
+        if let en = WordFrequencyModel.shared("en") { out[.english] = en }
+        if let he = WordFrequencyModel.shared("he") { out[.hebrew] = he }
         return out
     }()
 
