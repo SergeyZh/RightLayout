@@ -49,22 +49,3 @@ jobs:
 
       - name: Test
         run: swift test
-
-      # Temporary: check the release packaging (ad hoc signature, no notarization).
-      - name: Package app (temporary)
-        run: |
-          ./releases/build_release.sh 20990101.000000
-          APP="releases/build/RightLayout SergeyZh.app"
-          ls "$APP/Contents" "$APP/Contents/Resources"
-          test -d "$APP/Contents/Resources/RightLayout_RightLayout.bundle"
-          codesign -dv --verbose=2 "$APP"
-          hdiutil imageinfo releases/RightLayout-SergeyZh-20990101.000000.dmg | head -5
-          plutil -p "$APP/Contents/Info.plist" | grep -i version
-          # The app must start from the bundle without the build directory.
-          rm -rf .build
-          "$APP/Contents/MacOS/RightLayout" > app.log 2>&1 &
-          PID=$!
-          sleep 10
-          cat app.log | head -40
-          kill -0 $PID && echo "app is running" || { echo "app exited"; exit 1; }
-          kill $PID
