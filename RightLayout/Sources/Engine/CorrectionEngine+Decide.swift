@@ -126,7 +126,10 @@ extension CorrectionEngine {
             limits: limits
         )
         let currentTargetLang = decision.layoutHypothesis.targetLanguage
-        let usesFastLane = evidence.tokenKind == .plain || evidence.isWhitelistedShort
+        // A short word whose only punctuation sits at its edges ("Lf/" → "Да.") is
+        // decided like the bare word: its converted text is final.
+        let isShortWithEdgePunctuation = evidence.tokenKind == .short && text.contains(where: { !$0.isLetter })
+        let usesFastLane = evidence.tokenKind == .plain || evidence.isWhitelistedShort || isShortWithEdgePunctuation
         var riskPolicy = riskPolicy(for: baseDisposition)
         if await settings.isLearningEnabled {
             riskPolicy = await personalizationEngine.demote(
