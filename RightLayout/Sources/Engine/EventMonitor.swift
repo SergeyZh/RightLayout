@@ -978,7 +978,8 @@ public final class EventMonitor {
                 allowEventReplayFallback: false,
                 currentVisibleText: combinedOriginal,
                 hostRuntimeProfile: hostProfile,
-                proxy: proxy
+                proxy: proxy,
+                unverifiedSuffix: combinedVerification.includesSeparator ? "" : separator
             )
             guard let applied else { return false }
 
@@ -1087,7 +1088,8 @@ public final class EventMonitor {
                 allowEventReplayFallback: allowEventReplayFallback,
                 currentVisibleText: expectedOriginal,
                 hostRuntimeProfile: hostProfile,
-                proxy: proxy
+                proxy: proxy,
+                unverifiedSuffix: verification.map { $0.includesSeparator ? "" : separator } ?? ""
             )
             guard let applied else {
                 if switchedEarly {
@@ -1459,7 +1461,8 @@ public final class EventMonitor {
         allowEventReplayFallback: Bool,
         currentVisibleText: String,
         hostRuntimeProfile: HostRuntimeProfile,
-        proxy: CGEventTapProxy?
+        proxy: CGEventTapProxy?,
+        unverifiedSuffix: String = ""
     ) async -> TextEditResult? {
         replacementService.setSkipEventPosting(skipEventPosting)
         runtimeState = .replacing
@@ -1479,7 +1482,8 @@ public final class EventMonitor {
             allowClipboardFallback: allowClipboardFallback,
             allowEventReplayFallback: allowEventReplayFallback,
             sessionIsDirty: inputSession.isDirty,
-            currentTypedToken: currentVisibleText
+            currentTypedToken: currentVisibleText,
+            unverifiedSuffix: unverifiedSuffix
         )
 
         let result = await applyRequest(request, proxy: proxy)
@@ -1817,7 +1821,7 @@ public final class EventMonitor {
         }
 
         let trimmed = expectedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let word = CorrectionDecisionPolicy.letterCore(of: trimmed),
+        guard let word = CorrectionDecisionPolicy.letterCore(of: trimmed, typedInWrongLayout: true),
               word.count >= max(1, settings.minAutoCorrectWordLength),
               word.count <= 18 else {
             return false

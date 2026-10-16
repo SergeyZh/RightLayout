@@ -100,9 +100,15 @@ actor IntentDetector {
             }
         }
         
-        // No spaces but has dots/slashes (file path-like) and not a sentence end
+        // No spaces but has dots/slashes (file path-like) and not a sentence end.
+        // Slashes only at the end of a word don't make a path: "/" is the period key on
+        // the Russian PC layout, so "Lf/" is "Да." typed in the wrong layout.
         if !text.contains(" ") && (text.contains("/") || text.contains("\\")) {
-            return true
+            let core = text.reversed().drop(while: { $0 == "/" })
+            let isWordWithTrailingSlash = !core.isEmpty && core.allSatisfy { $0.isLetter }
+            if !isWordWithTrailingSlash {
+                return true
+            }
         }
         return false
     }

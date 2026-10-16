@@ -124,11 +124,19 @@ package enum CorrectionDecisionPolicy {
         "!", "?", ".", ",", ":", ";", "\"", "'", "(", ")", "«", "»", "…"
     ]
 
+    /// Keys typed on a Latin layout that are sentence punctuation on the Russian PC
+    /// layout: "/" is the period, "&" the question mark, "^" the colon ("Lf/" → "Да.").
+    private static let wrongLayoutEdgePunctuation: Set<Character> = edgePunctuation.union(["/", "&", "^"])
+
     /// The letters of `text` without punctuation stuck to its edges ("Вщту!" → "Вщту"),
     /// or nil if anything other than letters is left.
-    package static func letterCore(of text: String) -> Substring? {
-        guard let first = text.firstIndex(where: { !edgePunctuation.contains($0) }),
-              let last = text.lastIndex(where: { !edgePunctuation.contains($0) }) else {
+    ///
+    /// With `typedInWrongLayout`, keys that become sentence punctuation in the other
+    /// layout also count as edge punctuation ("Lf/" → "Lf").
+    package static func letterCore(of text: String, typedInWrongLayout: Bool = false) -> Substring? {
+        let edges = typedInWrongLayout ? wrongLayoutEdgePunctuation : edgePunctuation
+        guard let first = text.firstIndex(where: { !edges.contains($0) }),
+              let last = text.lastIndex(where: { !edges.contains($0) }) else {
             return nil
         }
         let core = text[first...last]
@@ -136,10 +144,11 @@ package enum CorrectionDecisionPolicy {
     }
 
     /// Whether `original` is a word with punctuation only at its edges, and that
-    /// punctuation is still punctuation after conversion: "Вщту!" → "Done!" is, while
-    /// "ghbdtn." → "приветю" (the period is a letter key in Russian) is not.
+    /// punctuation is still punctuation after conversion: "Вщту!" → "Done!" and
+    /// "Lf/" → "Да." are, while "ghbdtn." → "приветю" (the period is a letter key in
+    /// Russian) is not.
     package static func isWordWithEdgePunctuation(original: String, converted: String) -> Bool {
-        guard let core = letterCore(of: original),
+        guard let core = letterCore(of: original, typedInWrongLayout: true),
               core.count < original.count,
               let convertedCore = letterCore(of: converted) else {
             return false

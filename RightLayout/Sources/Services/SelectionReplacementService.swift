@@ -44,6 +44,10 @@ struct TextEditRequest: @unchecked Sendable {
     let allowEventReplayFallback: Bool
     let sessionIsDirty: Bool
     let currentTypedToken: String?
+    /// Characters the user typed right after `expectedOriginal` (the word separator)
+    /// that the host's text didn't show yet when the word was verified. Retyping must
+    /// remove and restore them as well, since they're in the field by then.
+    var unverifiedSuffix: String = ""
 }
 
 struct TextEditResult: @unchecked Sendable {
@@ -483,23 +487,17 @@ final class SelectionReplacementService {
             return aborted
         }
 
-        let deleteCount: Int
-        let tail: String
-        if selection == verifiedRange, selection.length > 0 {
-            // The text is selected: typing replaces it.
-            deleteCount = 0
-            tail = ""
-        } else {
-            let end = NSMaxRange(verifiedRange)
-            guard selection.length == 0, selection.location >= end else { return aborted }
-            guard let typedSince = substring(in: current.fullText, range: NSRange(location: end, length: selection.location - end)),
-                  typedSince.count <= 4,
-                  !typedSince.contains(where: \.isNewline) else {
-                return aborted
-            }
-            tail = typedSince
-            deleteCount = request.expectedOriginal.count + tail.count
+        guard let plan = Self.verifiedReplayPlan(
+            fullText: current.fullText,
+            selection: selection,
+            verifiedRange: verifiedRange,
+            expectedOriginal: request.expectedOriginal,
+            unverifiedSuffix: request.unverifiedSuffix
+        ) else {
+            return aborted
         }
+        let deleteCount = plan.deleteCount
+        let tail = plan.tail
 
         trace.log(
             .replacementStarted,
@@ -521,10 +519,15 @@ final class SelectionReplacementService {
             try? await Task.sleep(nanoseconds: timing.insertDelay)
         }
 
-        // The host updates its AX text asynchronously; give it a moment.
+        // The host updates its AX text asynchronously; give it a moment. A host that
+        // hid the separator before may still not show it after the retyped word.
+        let acceptedSuffixes = plan.tailIsUnverified ? [typed, request.replacement] : [typed]
         for attempt in 0..<5 {
             try? await Task.sleep(nanoseconds: attempt == 0 ? timing.postApplyDelay : 30_000_000)
-            if case .verified(let context) = service.verifyExpectedSuffix(typed, revision: request.sessionRevision) {
+            for suffix in acceptedSuffixes {
+                guard case .verified(let context) = service.verifyExpectedSuffix(suffix, revision: request.sessionRevision) else {
+                    continue
+                }
                 return TextEditResult(
                     strategy: .eventReplayTransaction,
                     appliedText: request.replacement,
@@ -538,6 +541,49 @@ final class SelectionReplacementService {
 
         logger.warning("Retyped text could not be verified")
         return aborted
+    }
+
+    /// How many characters to delete before the caret, and which typed characters to
+    /// restore after the replacement, when retyping `verifiedRange`.
+    ///
+    /// Characters between the verified text and the caret were typed after it and are
+    /// retyped. If the host shows none, `unverifiedSuffix` (the separator it hasn't shown
+    /// yet) is assumed to be there: it was delivered to the app before the retyping
+    /// keystrokes, so leaving it out would delete the word's first letter instead of the
+    /// separator (Slack: "Gjlujnjdm " became "GПодготовь"). Returns nil when the caret
+    /// isn't where retyping can work.
+    nonisolated static func verifiedReplayPlan(
+        fullText: String,
+        selection: NSRange,
+        verifiedRange: NSRange,
+        expectedOriginal: String,
+        unverifiedSuffix: String
+    ) -> (deleteCount: Int, tail: String, tailIsUnverified: Bool)? {
+        if selection == verifiedRange, selection.length > 0 {
+            // The text is selected: typing replaces it.
+            return (0, "", false)
+        }
+
+        let end = NSMaxRange(verifiedRange)
+        guard selection.length == 0, selection.location >= end else { return nil }
+        let nsText = fullText as NSString
+        let typedSince: String
+        if selection.location <= nsText.length {
+            typedSince = nsText.substring(with: NSRange(location: end, length: selection.location - end))
+        } else if end == nsText.length,
+                  selection.location - end <= unverifiedSuffix.utf16.count {
+            // The caret is already past the separator, the text doesn't have it yet.
+            typedSince = ""
+        } else {
+            return nil
+        }
+        guard typedSince.count <= 4, !typedSince.contains(where: \.isNewline) else { return nil }
+
+        if typedSince.isEmpty, !unverifiedSuffix.isEmpty {
+            guard unverifiedSuffix.count <= 4, !unverifiedSuffix.contains(where: \.isNewline) else { return nil }
+            return (expectedOriginal.count + unverifiedSuffix.count, unverifiedSuffix, true)
+        }
+        return (expectedOriginal.count + typedSince.count, typedSince, false)
     }
 
     private func replaceViaClipboardSelection(

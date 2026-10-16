@@ -20,6 +20,21 @@ public final class LayoutMapper: @unchecked Sendable {
     private var allLayoutsPerLanguage: [Language: [String]] = [:]
     private var layoutLanguageById: [String: Language] = [:]
     private var ambiguousLayoutIds: Set<String> = []
+    // Layout IDs enabled in macOS (filled in on the main queue by `detectActiveLayouts`).
+    private var installedLayoutIds: Set<String> = []
+
+    /// Layouts that put letters on different keys than their language's usual layout
+    /// (phonetic Russian, Dvorak, Colemak). Converting through one the user doesn't have
+    /// turns ordinary words into transliteration or gibberish that happens to be a word
+    /// ("Саммари" -> "Sammari", "пзе" -> "ily"), so they are tried only when enabled.
+    static let rearrangedLetterLayoutIds: Set<String> = [
+        "russian_phonetic",
+        "colemak",
+        "dvorak",
+        "dvorak_left",
+        "dvorak_right",
+        "dvorak_qwertycmd"
+    ]
 
     private lazy var wordValidator: WordValidator = HybridWordValidator()
     private lazy var ngramModels: [Language: NgramLanguageModel] = {
@@ -161,9 +176,13 @@ public final class LayoutMapper: @unchecked Sendable {
         }
 
         // Call InputSourceManager on main actor
-        let detected = MainActor.assumeIsolated {
-            InputSourceManager.shared.detectInstalledLayouts()
+        let (detected, installed) = MainActor.assumeIsolated {
+            (
+                InputSourceManager.shared.detectInstalledLayouts(),
+                InputSourceManager.shared.installedLayoutVariantsByLanguage()
+            )
         }
+        installedLayoutIds = Set(installed.values.flatMap { $0.map(\.layoutId) })
         for (langCode, layoutID) in detected {
             if let lang = Language(rawValue: langCode) {
                 activeLayouts[lang] = layoutID
@@ -588,25 +607,35 @@ public final class LayoutMapper: @unchecked Sendable {
     /// Example: user typed English on Russian Phonetic → Cyrillic token like "челло".
     /// If the app is configured for "russianwin", deterministic RU→EN conversion fails, but trying
     /// RU source variants recovers "hello".
-    public func convertAllVariants(_ text: String, from: Language, to: Language, activeLayouts: [String: String]? = nil) -> [(layout: String, result: String)] {
+    ///
+    /// Layouts from `rearrangedLetterLayoutIds` are skipped unless they are the active ones or
+    /// enabled in macOS (`installedLayouts`, by default the detected set).
+    public func convertAllVariants(
+        _ text: String,
+        from: Language,
+        to: Language,
+        activeLayouts: [String: String]? = nil,
+        installedLayouts: Set<String>? = nil
+    ) -> [(layout: String, result: String)] {
         guard let targetLayouts = allLayoutsPerLanguage[to] else { return [] }
         let fromID = activeLayouts?[from.rawValue] ?? self.activeLayouts[from] ?? "us"
         let toID = activeLayouts?[to.rawValue] ?? self.activeLayouts[to] ?? "us"
+        let installed = installedLayouts ?? installedLayoutIds
+
+        func isUsable(_ layoutId: String) -> Bool {
+            !Self.rearrangedLetterLayoutIds.contains(layoutId) || installed.contains(layoutId)
+        }
 
         var sourceLayouts: [String] = [fromID]
         if (from == .russian || from == .hebrew),
            let allSources = allLayoutsPerLanguage[from] {
-            for src in allSources where !sourceLayouts.contains(src) {
+            for src in allSources where !sourceLayouts.contains(src) && isUsable(src) {
                 sourceLayouts.append(src)
             }
         }
 
         var orderedTargets: [String] = [toID]
-        for tgt in targetLayouts where !orderedTargets.contains(tgt) {
-            // Russian – QWERTY maps Latin letters by sound, so converting English text through it
-            // when the user hasn't enabled it is plain transliteration ("privet" -> "привет"),
-            // not a wrong-layout fix.
-            if from == .english, tgt == "russian_phonetic" { continue }
+        for tgt in targetLayouts where !orderedTargets.contains(tgt) && isUsable(tgt) {
             orderedTargets.append(tgt)
         }
 
@@ -637,8 +666,15 @@ public final class LayoutMapper: @unchecked Sendable {
         guard let sourceLayouts = allLayoutsPerLanguage[from] else { return [] }
         let toID = activeLayouts?[to.rawValue] ?? self.activeLayouts[to] ?? "us"
         
+        let fromID = activeLayouts?[from.rawValue] ?? self.activeLayouts[from]
+
         var results: [(String, String)] = []
         for srcLayout in sourceLayouts {
+            if Self.rearrangedLetterLayoutIds.contains(srcLayout),
+               srcLayout != fromID,
+               !installedLayoutIds.contains(srcLayout) {
+                continue
+            }
             if let converted = convertBest(text, fromLayout: srcLayout, toLayout: toID),
                converted != text {  // Only include if actually changed
                 results.append((srcLayout, converted))
