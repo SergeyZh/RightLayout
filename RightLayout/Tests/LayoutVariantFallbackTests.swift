@@ -14,10 +14,16 @@ final class LayoutVariantFallbackTests: XCTestCase {
             return
         }
 
-        // Misconfigured/detected layouts: RU is set to russianwin (not phonetic).
+        // Both Russian layouts are enabled; RU is set to russianwin (not phonetic).
         let activeLayouts = ["en": "us", "ru": "russianwin", "he": "hebrew"]
 
-        let variants = mapper.convertAllVariants(typedOnRuPhonetic, from: .russian, to: .english, activeLayouts: activeLayouts)
+        let variants = mapper.convertAllVariants(
+            typedOnRuPhonetic,
+            from: .russian,
+            to: .english,
+            activeLayouts: activeLayouts,
+            installedLayouts: ["us", "russianwin", "russian_phonetic", "hebrew"]
+        )
         XCTAssertTrue(
             variants.contains(where: { $0.result == "hello" }),
             "Expected to recover 'hello' from RU phonetic input; got: \(variants.map { $0.result })"

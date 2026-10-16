@@ -95,6 +95,16 @@ actor ConfidenceRouter {
             decision = fallbackCandidate
         }
 
+        if mode == .automatic,
+           !decision.layoutHypothesis.rawValue.contains("_from_"),
+           let punctuated = wrongLayoutPunctuationDecision(
+               token: token,
+               activeLayouts: activeLayouts,
+               enabledLanguages: enabledLanguages
+           ) {
+            decision = punctuated
+        }
+
         let convertedText = convertedText(for: token, decision: decision, activeLayouts: activeLayouts)
         // A word with sentence punctuation stuck to it ("Вщту!" → "Done!") is decided
         // like the word itself.
@@ -129,6 +139,40 @@ actor ConfidenceRouter {
             isCorrection: decision.layoutHypothesis.rawValue.contains("_from_"),
             isWhitelistedShort: isWhitelistedShort
         )
+    }
+
+    /// A Latin word ending in a key that is sentence punctuation only on the Russian
+    /// layout ("Lf/" → "Да.", "Lf&" → "Да?") was typed in the wrong layout, even when
+    /// the bare word is also an English abbreviation: nobody ends an English word
+    /// with "/" or "&".
+    ///
+    /// Other sentence punctuation ("Lf?" → "Да,") ends the sentence too, so no later
+    /// word will settle it; there the bare word must be a common Russian word and not
+    /// a common English one.
+    private func wrongLayoutPunctuationDecision(
+        token: String,
+        activeLayouts: [String: String],
+        enabledLanguages: Set<Language>
+    ) -> LanguageDecision? {
+        let russianOnlyPunctuation: Set<Character> = ["/", "&", "^"]
+        guard LanguageHypothesis.ruFromEnLayout.isAllowed(in: enabledLanguages),
+              dominantScriptLanguage(token) == .english,
+              let converted = LayoutMapper.shared.convert(token, from: .english, to: .russian, activeLayouts: activeLayouts),
+              CorrectionDecisionPolicy.isWordWithEdgePunctuation(original: token, converted: converted),
+              let core = CorrectionDecisionPolicy.letterCore(of: converted),
+              wordValidator.confidence(for: String(core), language: .russian) >= thresholds.targetWordMin else {
+            return nil
+        }
+        if !token.contains(where: { russianOnlyPunctuation.contains($0) }) {
+            guard let typedCore = CorrectionDecisionPolicy.letterCore(of: token, typedInWrongLayout: true),
+                  BuiltinLexicon.contains(core.lowercased(), language: .russian),
+                  !BuiltinLexicon.contains(typedCore.lowercased(), language: .english) else {
+                return nil
+            }
+        }
+        let decision = LanguageDecision(language: .russian, layoutHypothesis: .ruFromEnLayout, confidence: 0.95, scores: [:])
+        DecisionLogger.shared.logDecision(token: token, path: "WRONG_LAYOUT_PUNCTUATION", result: decision)
+        return decision
     }
 
     private func rankedEvidenceCandidates(for decision: LanguageDecision) -> [DecisionEvidenceCandidate] {

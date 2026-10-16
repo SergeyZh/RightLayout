@@ -1,0 +1,198 @@
+import XCTest
+@testable import RightLayout
+
+/// Words that were switched wrongly, or not switched, in real use.
+final class SwitchingRegressionTests: XCTestCase {
+    private var engine: CorrectionEngine!
+    private var originalLanguages: Set<Language>?
+
+    private let activeLayouts = ["en": "us", "ru": "russianwin", "he": "hebrew"]
+    private let installedLayouts: Set<String> = ["us", "russianwin", "hebrew"]
+
+    @MainActor
+    override func setUp() async throws {
+        let settings = SettingsManager.shared
+        settings.isEnabled = true
+        originalLanguages = settings.customEnabledLanguages
+        settings.customEnabledLanguages = [.english, .russian]
+        engine = CorrectionEngine(settings: settings)
+    }
+
+    @MainActor
+    override func tearDown() async throws {
+        SettingsManager.shared.customEnabledLanguages = originalLanguages
+        engine = nil
+    }
+
+    // MARK: - Layouts the user doesn't have
+
+    func testRussianWordIsNotTransliteratedThroughPhoneticLayout() {
+        let variants = LayoutMapper.shared.convertAllVariants(
+            "Саммари", from: .russian, to: .english,
+            activeLayouts: activeLayouts, installedLayouts: installedLayouts
+        )
+        XCTAssertFalse(variants.contains { $0.result == "Sammari" }, "got \(variants.map(\.result))")
+    }
+
+    func testRussianWordIsNotConvertedThroughDvorak() {
+        let variants = LayoutMapper.shared.convertAllVariants(
+            "пзе", from: .russian, to: .english,
+            activeLayouts: activeLayouts, installedLayouts: installedLayouts
+        )
+        let results = variants.map(\.result)
+        XCTAssertFalse(results.contains("ily"), "got \(results)")
+        XCTAssertTrue(results.contains("gpt"), "got \(results)")
+    }
+
+    func testEnabledRearrangedLayoutIsStillTried() {
+        let variants = LayoutMapper.shared.convertAllVariants(
+            "пзе", from: .russian, to: .english,
+            activeLayouts: activeLayouts, installedLayouts: installedLayouts.union(["dvorak"])
+        )
+        XCTAssertTrue(variants.contains { $0.result == "ily" }, "got \(variants.map(\.result))")
+    }
+
+    func testSummaryInRussianIsLeftAlone() async {
+        let planned = await engine.planCorrection("Саммари", editingEnvironment: .accessibility)
+        if case .autoReplace(let candidate) = planned.plan {
+            XCTFail("Саммари was replaced with \(candidate.replacement)")
+        }
+    }
+
+    func testGptTypedInRussianIsNotTurnedIntoIly() async {
+        let planned = await engine.planCorrection("пзе", editingEnvironment: .accessibility)
+        if case .autoReplace(let candidate) = planned.plan {
+            XCTAssertNotEqual(candidate.replacement, "ily")
+        }
+    }
+
+    // MARK: - "Lf/" → "Да."
+
+    actor IntentHost {
+        let detector = IntentDetector()
+        func check(_ text: String) async -> UserIntent { await detector.detect(text: text) }
+    }
+
+    func testWordWithTrailingSlashIsProse() async {
+        let host = IntentHost()
+        let lf = await host.check("Lf/")
+        XCTAssertEqual(lf, .prose)
+        let path = await host.check("src/main")
+        XCTAssertEqual(path, .urlOrCommand)
+        let root = await host.check("/usr")
+        XCTAssertEqual(root, .urlOrCommand)
+    }
+
+    func testSlashThatBecomesAPeriodIsEdgePunctuation() {
+        XCTAssertTrue(CorrectionDecisionPolicy.isWordWithEdgePunctuation(original: "Lf/", converted: "Да."))
+        XCTAssertTrue(CorrectionDecisionPolicy.isWordWithEdgePunctuation(original: "Lf&", converted: "Да?"))
+        // The other way round "/" is not punctuation the user meant.
+        XCTAssertFalse(CorrectionDecisionPolicy.isWordWithEdgePunctuation(original: "руддщ.", converted: "hello/"))
+    }
+
+    func testYesWithPeriodTypedInEnglishIsCorrected() async {
+        let planned = await engine.planCorrection("Lf/", editingEnvironment: .accessibility)
+        guard case .autoReplace(let candidate) = planned.plan else {
+            return XCTFail("Lf/ was not auto-corrected: \(String(describing: planned.plan))")
+        }
+        XCTAssertEqual(candidate.replacement, "Да.")
+    }
+
+    func testYesWithQuestionMarkTypedInEnglishIsCorrected() async {
+        let planned = await engine.planCorrection("Lf?", editingEnvironment: .accessibility)
+        guard case .autoReplace(let candidate) = planned.plan else {
+            return XCTFail("Lf? was not auto-corrected: \(String(describing: planned.plan))")
+        }
+        XCTAssertEqual(candidate.replacement, "Да,")
+    }
+
+    func testQuestionMarkKeyIsTheCommaOnRussianPC() {
+        XCTAssertEqual(LayoutMapper.shared.convert("Lf?", fromLayout: "us", toLayout: "russianwin"), "Да,")
+        XCTAssertEqual(LayoutMapper.shared.convert("Ghbdtn? rfr ltkf", fromLayout: "us", toLayout: "russianwin"), "Привет, как дела")
+        // On the Mac Russian layout the same key is still the question mark.
+        XCTAssertEqual(LayoutMapper.shared.convert("Lf?", fromLayout: "us", toLayout: "russian"), "Да?")
+        // "?" typed on Russian PC (Shift+7) stays a question mark, not "&".
+        XCTAssertEqual(LayoutMapper.shared.convert("Руддщ?", fromLayout: "russianwin", toLayout: "us"), "Hello?")
+    }
+
+    func testEnglishWordWithQuestionMarkIsLeftAlone() async {
+        for word in ["Yes?", "No?", "Ok?", "What?"] {
+            let planned = await engine.planCorrection(word, editingEnvironment: .accessibility)
+            if case .autoReplace(let candidate) = planned.plan {
+                XCTFail("\(word) was replaced with \(candidate.replacement)")
+            }
+        }
+    }
+
+    func testBareAbbreviationIsStillLeftForContext() async {
+        // "lf" alone is a valid English abbreviation; only the punctuation gives it away.
+        let planned = await engine.planCorrection("Lf", editingEnvironment: .accessibility)
+        if case .autoReplace(let candidate) = planned.plan {
+            XCTFail("Lf was replaced with \(candidate.replacement)")
+        }
+    }
+
+    // MARK: - Retyping when the host hides the separator (Slack)
+
+    func testRetypeDeletesSeparatorTheHostDoesNotShow() {
+        // Slack reports the caret before the space that was just typed.
+        let plan = SelectionReplacementService.verifiedReplayPlan(
+            fullText: "Gjlujnjdm ",
+            selection: NSRange(location: 9, length: 0),
+            verifiedRange: NSRange(location: 0, length: 9),
+            expectedOriginal: "Gjlujnjdm",
+            unverifiedSuffix: " "
+        )
+        XCTAssertEqual(plan?.deleteCount, 10)
+        XCTAssertEqual(plan?.tail, " ")
+        XCTAssertEqual(plan?.tailIsUnverified, true)
+    }
+
+    func testRetypeWhenTextLagsBehindCaret() {
+        let plan = SelectionReplacementService.verifiedReplayPlan(
+            fullText: "Gjlujnjdm",
+            selection: NSRange(location: 10, length: 0),
+            verifiedRange: NSRange(location: 0, length: 9),
+            expectedOriginal: "Gjlujnjdm",
+            unverifiedSuffix: " "
+        )
+        XCTAssertEqual(plan?.deleteCount, 10)
+        XCTAssertEqual(plan?.tail, " ")
+    }
+
+    func testRetypeKeepsSeparatorTheHostShows() {
+        let plan = SelectionReplacementService.verifiedReplayPlan(
+            fullText: "Gjlujnjdm ",
+            selection: NSRange(location: 10, length: 0),
+            verifiedRange: NSRange(location: 0, length: 9),
+            expectedOriginal: "Gjlujnjdm",
+            unverifiedSuffix: " "
+        )
+        XCTAssertEqual(plan?.deleteCount, 10)
+        XCTAssertEqual(plan?.tail, " ")
+        XCTAssertEqual(plan?.tailIsUnverified, false)
+    }
+
+    func testRetypeWithoutSeparator() {
+        let plan = SelectionReplacementService.verifiedReplayPlan(
+            fullText: "Gjlujnjdm ",
+            selection: NSRange(location: 10, length: 0),
+            verifiedRange: NSRange(location: 0, length: 10),
+            expectedOriginal: "Gjlujnjdm ",
+            unverifiedSuffix: ""
+        )
+        XCTAssertEqual(plan?.deleteCount, 10)
+        XCTAssertEqual(plan?.tail, "")
+    }
+
+    func testRetypeNeverRetypesANewline() {
+        let plan = SelectionReplacementService.verifiedReplayPlan(
+            fullText: "Gjlujnjdm",
+            selection: NSRange(location: 9, length: 0),
+            verifiedRange: NSRange(location: 0, length: 9),
+            expectedOriginal: "Gjlujnjdm",
+            unverifiedSuffix: "\n"
+        )
+        XCTAssertNil(plan)
+    }
+}

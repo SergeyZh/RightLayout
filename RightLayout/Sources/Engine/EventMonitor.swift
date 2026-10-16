@@ -174,6 +174,8 @@ public final class EventMonitor {
     private static let boundaryVerificationRetryDelay: UInt64 = 5_000_000
 
     package private(set) var lastReplacement: (deletedCount: Int, insertedText: String)?
+    /// The last hotkey conversion of selected text, so converting it again toggles back.
+    private var lastSelectionConversion: SelectionConversion?
     /// Held Enters that were let through (for tests; nothing is posted with `skipEventPosting`).
     package private(set) var releasedEnterCount = 0
 
@@ -891,7 +893,10 @@ public final class EventMonitor {
             ]
         )
 
-        if skipEventPosting,
+        // A word ended by a held Enter gets no later context to confirm a suggestion, and
+        // the Enter is held precisely so the message isn't sent garbled: apply it now. The
+        // Enter stays held, so the user sees the change before sending.
+        if skipEventPosting || heldEnterId != nil,
            case .hint = planned.plan,
            let forced = await engine.applyPendingSuggestion(),
            let corrected = forced.corrected {
@@ -978,7 +983,8 @@ public final class EventMonitor {
                 allowEventReplayFallback: false,
                 currentVisibleText: combinedOriginal,
                 hostRuntimeProfile: hostProfile,
-                proxy: proxy
+                proxy: proxy,
+                unverifiedSuffix: combinedVerification.includesSeparator ? "" : separator
             )
             guard let applied else { return false }
 
@@ -1087,7 +1093,8 @@ public final class EventMonitor {
                 allowEventReplayFallback: allowEventReplayFallback,
                 currentVisibleText: expectedOriginal,
                 hostRuntimeProfile: hostProfile,
-                proxy: proxy
+                proxy: proxy,
+                unverifiedSuffix: verification.map { $0.includesSeparator ? "" : separator } ?? ""
             )
             guard let applied else {
                 if switchedEarly {
@@ -1237,10 +1244,68 @@ public final class EventMonitor {
         )
     }
 
+    private func convertSelection(
+        _ selectionSnapshot: FocusedTextSnapshot,
+        bundleId: String?,
+        hostProfile: HostRuntimeProfile
+    ) async {
+        let selectedText = selectionSnapshot.selectedText
+        let replacement: String
+        let targetLanguage: Language?
+        if let reverted = lastSelectionConversion?.reverting(selectedText) {
+            await engine.resetCycling()
+            replacement = reverted
+            targetLanguage = SelectionConversion.dominantLanguage(of: reverted)
+        } else if let corrected = await engine.correctLastWord(selectedText, bundleId: bundleId) {
+            replacement = corrected
+            targetLanguage = await engine.currentCyclingTargetLanguage()
+        } else {
+            return
+        }
+        guard replacement != selectedText else { return }
+
+        let verified = VerifiedEditContext(
+            snapshot: selectionSnapshot,
+            verifiedRange: selectionSnapshot.selectedRange,
+            verifiedText: selectedText
+        )
+        let applied = await performReplacement(
+            intent: .manualSelection,
+            expectedOriginal: selectedText,
+            replacement: replacement,
+            verifiedContext: verified,
+            allowClipboardFallback: true,
+            allowEventReplayFallback: false,
+            currentVisibleText: selectedText,
+            hostRuntimeProfile: hostProfile,
+            proxy: nil
+        )
+        guard let applied else { return }
+        lastSelectionConversion = SelectionConversion(original: selectedText, replacement: replacement)
+        let transaction = await buildManualTransaction(
+            original: selectedText,
+            replacement: replacement,
+            intent: .manualSelection,
+            bundleId: bundleId
+        )
+        await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified)
+        if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
+            switchInputSourceIfNeeded(to: targetLanguage, transactionId: transaction?.id)
+        }
+    }
+
     private func handleHotkeyPress() async {
         let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let focusedCapabilities = textContextService.resolveFocusedElementCapabilities()
         let hostProfile = currentHostRuntimeProfile(bundleId: bundleId, capabilities: focusedCapabilities?.capabilities)
+
+        // Selected text is what the user wants converted, even right after a correction
+        // that could otherwise be cycled.
+        if let selectionSnapshot = textContextService.snapshotSelectionForManualAction(),
+           !selectionSnapshot.selectedText.isEmpty {
+            await convertSelection(selectionSnapshot, bundleId: bundleId, hostProfile: hostProfile)
+            return
+        }
 
         if await engine.hasCyclingState(),
            let currentVisible = await engine.getCurrentCyclingText() {
@@ -1309,40 +1374,6 @@ public final class EventMonitor {
                 await commitReplacementTransaction(result.transaction, editResult: applied, verifiedContext: verified)
                 if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
                     switchInputSourceIfNeeded(to: result.targetLanguage, transactionId: result.transaction?.id)
-                }
-            }
-            return
-        }
-
-        if let selectionSnapshot = textContextService.snapshotSelectionForManualAction(),
-           !selectionSnapshot.selectedText.isEmpty,
-           let replacement = await engine.correctLastWord(selectionSnapshot.selectedText, bundleId: bundleId) {
-            let verified = VerifiedEditContext(
-                snapshot: selectionSnapshot,
-                verifiedRange: selectionSnapshot.selectedRange,
-                verifiedText: selectionSnapshot.selectedText
-            )
-            let applied = await performReplacement(
-                intent: .manualSelection,
-                expectedOriginal: selectionSnapshot.selectedText,
-                replacement: replacement,
-                verifiedContext: verified,
-                allowClipboardFallback: true,
-                allowEventReplayFallback: false,
-                currentVisibleText: selectionSnapshot.selectedText,
-                hostRuntimeProfile: hostProfile,
-                proxy: nil
-            )
-            if let applied {
-                let transaction = await buildManualTransaction(
-                    original: selectionSnapshot.selectedText,
-                    replacement: replacement,
-                    intent: .manualSelection,
-                    bundleId: bundleId
-                )
-                await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified)
-                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
-                    switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: transaction?.id)
                 }
             }
             return
@@ -1459,7 +1490,8 @@ public final class EventMonitor {
         allowEventReplayFallback: Bool,
         currentVisibleText: String,
         hostRuntimeProfile: HostRuntimeProfile,
-        proxy: CGEventTapProxy?
+        proxy: CGEventTapProxy?,
+        unverifiedSuffix: String = ""
     ) async -> TextEditResult? {
         replacementService.setSkipEventPosting(skipEventPosting)
         runtimeState = .replacing
@@ -1479,7 +1511,8 @@ public final class EventMonitor {
             allowClipboardFallback: allowClipboardFallback,
             allowEventReplayFallback: allowEventReplayFallback,
             sessionIsDirty: inputSession.isDirty,
-            currentTypedToken: currentVisibleText
+            currentTypedToken: currentVisibleText,
+            unverifiedSuffix: unverifiedSuffix
         )
 
         let result = await applyRequest(request, proxy: proxy)
@@ -1817,7 +1850,7 @@ public final class EventMonitor {
         }
 
         let trimmed = expectedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let word = CorrectionDecisionPolicy.letterCore(of: trimmed),
+        guard let word = CorrectionDecisionPolicy.letterCore(of: trimmed, typedInWrongLayout: true),
               word.count >= max(1, settings.minAutoCorrectWordLength),
               word.count <= 18 else {
             return false
