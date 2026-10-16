@@ -76,7 +76,8 @@ jobs:
       
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          # The job's own token can publish here: the releases go to this same repository.
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG="v$VERSION"
