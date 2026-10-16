@@ -50,7 +50,7 @@ final class ModelLoadingTests: XCTestCase {
         XCTAssertTrue(en.contains("hello"))
 
         let he = try XCTUnwrap(WordFrequencyModel.shared("he"), "he_unigrams.tsv should load")
-        XCTAssertTrue(he.contains("של"))
+        XCTAssertTrue(he.contains("שלום"))
     }
 
     func testMissingWordFrequencyListIsNil() {
