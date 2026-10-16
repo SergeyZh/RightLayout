@@ -6,6 +6,9 @@ on:
 jobs:
   build:
     runs-on: macos-26
+    # Signing secrets live in the "release" environment, which only main can deploy to,
+    # so workflows from other branches and PRs can't read them.
+    environment: release
     permissions:
       contents: write
     
