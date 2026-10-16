@@ -90,6 +90,15 @@ final class SwitchingRegressionTests: XCTestCase {
         XCTAssertFalse(CorrectionDecisionPolicy.isWordWithEdgePunctuation(original: "руддщ.", converted: "hello/"))
     }
 
+    func testDiagLf() async {
+        for t in ["Lf", "Lf/", "Lf."] {
+            await engine.resetCycling()
+            let planned = await engine.planCorrection(t, editingEnvironment: .accessibility)
+            let e = planned.result.evidence
+            print("DIAG \(t): plan=\(planned.plan) conf=\(String(describing: planned.result.confidence)) hyp=\(String(describing: e?.decision.layoutHypothesis)) kind=\(String(describing: e?.tokenKind)) conv=\(String(describing: e?.convertedText)) margin=\(String(describing: e?.winnerMargin)) wl=\(String(describing: e?.isWhitelistedShort))")
+        }
+    }
+
     func testYesWithPeriodTypedInEnglishIsCorrected() async {
         let planned = await engine.planCorrection("Lf/", editingEnvironment: .accessibility)
         guard case .autoReplace(let candidate) = planned.plan else {
