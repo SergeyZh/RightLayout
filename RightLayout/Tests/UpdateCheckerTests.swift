@@ -125,7 +125,33 @@ final class UpdateCheckerTests: XCTestCase {
         let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
         
         XCTAssertNil(release.pkgDownloadURL, "Should be nil when no .pkg asset exists")
+        XCTAssertEqual(release.installerDownloadURL?.absoluteString, "https://github.com/SergeyZh/RightLayout/releases/download/v1.5/RightLayout-1.5.dmg")
         XCTAssertNotNil(release.releasesPageURL, "Fallback to releases page should exist")
+    }
+
+    func test_installer_download_url_prefers_dmg_over_pkg() throws {
+        let json = """
+        {
+            "tag_name": "v20261016.205332",
+            "html_url": "https://github.com/SergeyZh/RightLayout/releases/tag/v20261016.205332",
+            "body": null,
+            "assets": [
+                {
+                    "name": "RightLayout-SergeyZh-20261016.205332.pkg",
+                    "browser_download_url": "https://example.com/a.pkg"
+                },
+                {
+                    "name": "RightLayout-SergeyZh-20261016.205332.dmg",
+                    "browser_download_url": "https://example.com/a.dmg"
+                }
+            ]
+        }
+        """
+
+        let release = try JSONDecoder().decode(GitHubRelease.self, from: json.data(using: .utf8)!)
+
+        XCTAssertEqual(release.version, "20261016.205332")
+        XCTAssertEqual(release.installerDownloadURL?.absoluteString, "https://example.com/a.dmg")
     }
     
     func test_github_api_parsing_version_without_v_prefix() throws {

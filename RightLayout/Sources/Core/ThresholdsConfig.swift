@@ -119,7 +119,7 @@ public struct ThresholdsConfig: Sendable {
     }
     
     private init() {
-        guard let url = Bundle.module.url(forResource: "thresholds", withExtension: "json"),
+        guard let url = Bundle.rightLayoutResources.url(forResource: "thresholds", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             // Defaults

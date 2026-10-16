@@ -83,10 +83,13 @@ Supports English, Russian, and Hebrew layouts with extensible architecture for a
 
 ## Install
 
-1. Download the `.pkg` from [Releases](https://github.com/SergeyZh/RightLayout/releases/latest)
-2. Run the installer
+1. Download the `.dmg` from [Releases](https://github.com/SergeyZh/RightLayout/releases/latest)
+2. Open it and drag RightLayout SergeyZh to Applications
 3. Grant Accessibility permission when prompted
 4. Done — RightLayout works in the background
+
+Releases are signed with a Developer ID and notarized by Apple, so macOS opens them
+without warnings. Each build is numbered by its UTC build time, e.g. `20261016.205332`.
 
 ---
 

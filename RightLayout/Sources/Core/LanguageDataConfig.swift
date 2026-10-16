@@ -29,7 +29,7 @@ public struct LanguageDataConfig: Sendable {
     public let whitelistHebrew: Set<String>
     
     private init() {
-        guard let url = Bundle.module.url(forResource: "language_data", withExtension: "json"),
+        guard let url = Bundle.rightLayoutResources.url(forResource: "language_data", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             // Fallback defaults

@@ -102,7 +102,7 @@ struct NgramLanguageModel: Sendable {
     /// Load model for a specific language from app resources
     static func loadLanguage(_ lang: String) throws -> NgramLanguageModel {
         #if SWIFT_PACKAGE
-        guard let url = Bundle.module.url(
+        guard let url = Bundle.rightLayoutResources.url(
             forResource: "\(lang)_trigrams",
             withExtension: "json"
         ) else {

@@ -2,19 +2,25 @@
 set -e
 
 # RightLayout Release Builder
-# Creates .app bundle and .pkg installer for distribution
+# Creates a signed .app bundle and a notarized .dmg for distribution.
+#
+# Signing: SIGNING_IDENTITY, or the first "Developer ID Application" identity in
+# the keychain; without one the app is signed ad hoc (local test builds only).
+# Notarization (skipped when none is set):
+#   NOTARY_KEY_PATH + NOTARY_KEY_ID + NOTARY_ISSUER_ID  App Store Connect API key (.p8)
+#   NOTARY_KEYCHAIN_PROFILE                             profile from `xcrun notarytool store-credentials`
 
 # This is a fork of RightLayout; it ships under its own name and bundle identifier
 # (see TRADEMARKS.md). The executable keeps the upstream name so scripts still find it.
 APP_NAME="RightLayout SergeyZh"
 EXECUTABLE_NAME="RightLayout"
 BUNDLE_ID="com.sergeyzh.rightlayout"
-PKG_BASENAME="RightLayout-SergeyZh"
+DMG_BASENAME="RightLayout-SergeyZh"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Use the version from the argument, or the build time (YYYYMMDD.HHMMSS, UTC)
-if [ -n "$1" ] && [ "$1" != "--publish" ]; then
+if [ -n "$1" ]; then
     VERSION="$1"
 else
     VERSION=$("$PROJECT_DIR/scripts/build_version.sh")
@@ -22,7 +28,7 @@ fi
 
 BUILD_DIR="$SCRIPT_DIR/build"
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
-PKG_PATH="$SCRIPT_DIR/$PKG_BASENAME-$VERSION.pkg"
+DMG_PATH="$SCRIPT_DIR/$DMG_BASENAME-$VERSION.dmg"
 
 echo "🚀 Building $APP_NAME v$VERSION"
 echo "================================"
@@ -69,11 +75,15 @@ cp "$BINARY_PATH" "$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 # Apache-2.0 §4: ship the license and attribution notices with the app
 cp "$PROJECT_DIR/LICENSE" "$PROJECT_DIR/NOTICE" "$APP_PATH/Contents/Resources/"
 
-# Copy resource bundle (required by Swift Package Manager)
+# Copy resource bundle (required by Swift Package Manager). It goes to Contents/Resources,
+# not the bundle root: codesign rejects unsealed files there. Bundle.rightLayoutResources
+# looks it up here.
 BUNDLE_PATH="$PROJECT_DIR/.build/release/RightLayout_RightLayout.bundle"
-if [ -d "$BUNDLE_PATH" ]; then
-    cp -r "$BUNDLE_PATH" "$APP_PATH/"
+if [ ! -d "$BUNDLE_PATH" ]; then
+    echo "❌ Resource bundle not found: $BUNDLE_PATH"
+    exit 1
 fi
+cp -R "$BUNDLE_PATH" "$APP_PATH/Contents/Resources/"
 
 # Copy icon
 ICON_SRC="$PROJECT_DIR/RightLayout/Assets.xcassets/AppIcon.appiconset/icon_512.png"
@@ -131,55 +141,71 @@ EOF
 
 echo "✅ App bundle created: $APP_PATH"
 
-# Create PKG installer
-echo "📦 Creating PKG installer..."
-rm -f "$PKG_PATH"
+# Sign the app with the hardened runtime and a secure timestamp (both required for
+# notarization). No entitlements: RightLayout/OMFK.entitlements enables the App Sandbox,
+# which rules out the keyboard event tap.
+if [ -z "$SIGNING_IDENTITY" ]; then
+    SIGNING_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+        | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)
+fi
 
-# Build pkg - app goes directly to /Applications
-pkgbuild \
-    --root "$APP_PATH" \
-    --identifier "$BUNDLE_ID" \
-    --version "$VERSION" \
-    --install-location "/Applications/$APP_NAME.app" \
-    --scripts "$SCRIPT_DIR/pkg_scripts" \
-    "$PKG_PATH"
+if [ -n "$SIGNING_IDENTITY" ]; then
+    echo "🔏 Signing with: $SIGNING_IDENTITY"
+    codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP_PATH"
+else
+    echo "⚠️  No Developer ID Application identity found, signing ad hoc (not for distribution)"
+    codesign --force --sign - "$APP_PATH"
+fi
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
-echo "✅ PKG created: $PKG_PATH"
+# Build the DMG: the app and a link to /Applications to drag it onto.
+echo "💿 Creating DMG..."
+DMG_STAGING="$BUILD_DIR/dmg"
+rm -rf "$DMG_STAGING" "$DMG_PATH"
+mkdir -p "$DMG_STAGING"
+cp -R "$APP_PATH" "$DMG_STAGING/"
+ln -s /Applications "$DMG_STAGING/Applications"
+hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGING" -ov -format UDZO "$DMG_PATH"
+rm -rf "$DMG_STAGING"
+
+if [ -n "$SIGNING_IDENTITY" ]; then
+    codesign --force --timestamp --sign "$SIGNING_IDENTITY" "$DMG_PATH"
+fi
+
+# Notarize and staple. Notarizing the DMG covers the app inside it.
+if [ -n "$NOTARY_KEY_PATH" ] && [ -n "$NOTARY_KEY_ID" ] && [ -n "$NOTARY_ISSUER_ID" ]; then
+    NOTARY_AUTH=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+elif [ -n "$NOTARY_KEYCHAIN_PROFILE" ]; then
+    NOTARY_AUTH=(--keychain-profile "$NOTARY_KEYCHAIN_PROFILE")
+else
+    NOTARY_AUTH=()
+fi
+
+if [ ${#NOTARY_AUTH[@]} -gt 0 ]; then
+    [ -n "$SIGNING_IDENTITY" ] || { echo "❌ Notarization needs a Developer ID signature"; exit 1; }
+    echo "📨 Notarizing (this waits for Apple)..."
+    if ! xcrun notarytool submit "$DMG_PATH" "${NOTARY_AUTH[@]}" --wait --output-format json \
+        > "$BUILD_DIR/notary.json"; then
+        cat "$BUILD_DIR/notary.json"
+        exit 1
+    fi
+    cat "$BUILD_DIR/notary.json"
+    STATUS=$(plutil -extract status raw "$BUILD_DIR/notary.json" 2>/dev/null || echo "unknown")
+    if [ "$STATUS" != "Accepted" ]; then
+        SUBMISSION_ID=$(plutil -extract id raw "$BUILD_DIR/notary.json" 2>/dev/null || true)
+        [ -n "$SUBMISSION_ID" ] && xcrun notarytool log "$SUBMISSION_ID" "${NOTARY_AUTH[@]}" || true
+        echo "❌ Notarization status: $STATUS"
+        exit 1
+    fi
+    xcrun stapler staple "$DMG_PATH"
+    xcrun stapler validate "$DMG_PATH"
+    spctl --assess --type open --context context:primary-signature -vv "$DMG_PATH"
+else
+    echo "⚠️  Notarization skipped: no NOTARY_* credentials set"
+fi
+
 echo ""
 echo "================================"
 echo "📦 Release artifacts:"
 echo "   App: $APP_PATH"
-echo "   PKG: $PKG_PATH"
-echo ""
-echo "To install: Double-click the PKG file"
-
-# Publish to GitHub releases repo if --publish flag is passed
-if [ "$2" = "--publish" ] || [ "$1" = "--publish" ]; then
-    echo ""
-    echo "🚀 Publishing to GitHub..."
-    
-    RELEASES_REPO="SergeyZh/RightLayout"
-    TAG="v$VERSION"
-    
-    # Check if release already exists
-    if gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
-        echo "⚠️  Release $TAG already exists. Deleting and recreating..."
-        gh release delete "$TAG" --repo "$RELEASES_REPO" --yes
-    fi
-    
-    # Create release with PKG
-    gh release create "$TAG" "$PKG_PATH" \
-        --repo "$RELEASES_REPO" \
-        --title "$APP_NAME $TAG" \
-        --notes "## $APP_NAME $TAG
-
-SergeyZh's build of RightLayout — a fork of [RightLayout](https://github.com/chernistry/RightLayout) by Alex Chernysh, not the official app.
-
-Download and run the installer.
-
-**Requirements:** macOS 13.0+
-
-**Feedback:** [GitHub Issues](https://github.com/SergeyZh/RightLayout/issues)"
-    
-    echo "✅ Published to https://github.com/$RELEASES_REPO/releases/tag/$TAG"
-fi
+echo "   DMG: $DMG_PATH"

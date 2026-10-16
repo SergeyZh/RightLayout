@@ -34,11 +34,11 @@ public final class CoreMLLayoutClassifier {
     }()
 
     private static let compiledModelURL: URL? = {
-        if let compiledURL = Bundle.module.url(forResource: "LayoutClassifier", withExtension: "mlmodelc") {
+        if let compiledURL = Bundle.rightLayoutResources.url(forResource: "LayoutClassifier", withExtension: "mlmodelc") {
             return compiledURL
         }
 
-        guard let sourceURL = Bundle.module.url(forResource: "LayoutClassifier", withExtension: "mlmodel") else {
+        guard let sourceURL = Bundle.rightLayoutResources.url(forResource: "LayoutClassifier", withExtension: "mlmodel") else {
             return nil
         }
 

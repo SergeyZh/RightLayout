@@ -41,6 +41,13 @@ public struct GitHubRelease: Decodable, Sendable {
         return URL(string: pkgAsset.browserDownloadURL)
     }
     
+    /// Finds the installer download URL: the .dmg of signed releases, or the .pkg of older ones
+    public var installerDownloadURL: URL? {
+        let asset = assets.first(where: { $0.name.hasSuffix(".dmg") })
+            ?? assets.first(where: { $0.name.hasSuffix(".pkg") })
+        return asset.flatMap { URL(string: $0.browserDownloadURL) }
+    }
+    
     /// Fallback download URL (releases page)
     public var releasesPageURL: URL? {
         URL(string: htmlURL)
@@ -217,7 +224,7 @@ public final class UpdateState: ObservableObject {
     
     /// Download URL for the update
     public var downloadURL: URL? {
-        availableRelease?.pkgDownloadURL ?? availableRelease?.releasesPageURL
+        availableRelease?.installerDownloadURL ?? availableRelease?.releasesPageURL
     }
     
     /// Check for updates and update state
