@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Use the image's default Xcode; print it so the log shows which toolchain built this,
       # and key the build cache on it so objects from another Xcode are never restored.
@@ -29,7 +29,7 @@ jobs:
           echo "xcode=$(xcodebuild -version | awk 'NR==2 {print $3}')" >> "$GITHUB_OUTPUT"
 
       - name: Cache SwiftPM build
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
           key: spm-${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
