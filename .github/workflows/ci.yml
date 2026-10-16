@@ -45,15 +45,3 @@ jobs:
 
       - name: Test
         run: swift test
-
-      # TEMPORARY: diagnose TransliterationHintIntegrationTests with the word lists loaded.
-      - name: Debug transliteration hint (temporary)
-        if: always()
-        run: |
-          log stream --level debug --predicate 'subsystem BEGINSWITH "com.sergeyzh.rightlayout" OR subsystem BEGINSWITH "com.rightlayout"' > tl.log 2>&1 &
-          LP=$!
-          sleep 2
-          RightLayout_DEBUG_LOG=1 swift test --filter TransliterationHintIntegrationTests 2>&1 | tail -40 || true
-          sleep 2
-          kill $LP || true
-          grep -v "^Filtering" tl.log | cut -c1-400 | tail -200

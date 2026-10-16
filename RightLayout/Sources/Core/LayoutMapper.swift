@@ -603,6 +603,10 @@ public final class LayoutMapper: @unchecked Sendable {
 
         var orderedTargets: [String] = [toID]
         for tgt in targetLayouts where !orderedTargets.contains(tgt) {
+            // Russian – QWERTY maps Latin letters by sound, so converting English text through it
+            // when the user hasn't enabled it is plain transliteration ("privet" -> "привет"),
+            // not a wrong-layout fix.
+            if from == .english, tgt == "russian_phonetic" { continue }
             orderedTargets.append(tgt)
         }
 
