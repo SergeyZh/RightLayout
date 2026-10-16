@@ -41,7 +41,14 @@ struct SystemWordValidator: WordValidator {
 
     init(spellChecker: NSSpellChecker = .shared) {
         self.spellChecker = spellChecker
-        self.languageCodes = Self.resolveLanguageCodes(available: spellChecker.availableLanguages)
+        let resolved = Self.resolveLanguageCodes(available: spellChecker.availableLanguages)
+        var codes: [Language: String?] = [:]
+        for (language, code) in resolved {
+            if let code, Self.rejectsGibberish(spellChecker, language: language, languageCode: code) {
+                codes[language] = .some(code)
+            }
+        }
+        self.languageCodes = codes
     }
 
     func confidence(for text: String, language: Language) -> Double {
@@ -104,6 +111,33 @@ struct SystemWordValidator: WordValidator {
             }
         }
         return true
+    }
+
+    /// Strings no dictionary should accept. A language can be listed as available while
+    /// its dictionary is missing; the checker then reports every word as correct, which
+    /// would let letter soup (e.g. "hfcrkflrf" mapped to Hebrew) pass as a real word.
+    private static let gibberishProbes: [Language: [String]] = [
+        .english: ["zxqvbkwj", "qqxzjvkw"],
+        .russian: ["ъыъщйъь", "щщщъъъыы"],
+        .hebrew: ["יכברלכךרכ", "ךךךףףץץ"]
+    ]
+
+    private static func rejectsGibberish(
+        _ spellChecker: NSSpellChecker,
+        language: Language,
+        languageCode: String
+    ) -> Bool {
+        let probes = gibberishProbes[language] ?? []
+        return probes.allSatisfy { probe in
+            spellChecker.checkSpelling(
+                of: probe,
+                startingAt: 0,
+                language: languageCode,
+                wrap: false,
+                inSpellDocumentWithTag: 0,
+                wordCount: nil
+            ).location != NSNotFound
+        }
     }
 
     private static func resolveLanguageCodes(available: [String]) -> [Language: String?] {
