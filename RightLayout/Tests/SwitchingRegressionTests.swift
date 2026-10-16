@@ -98,6 +98,23 @@ final class SwitchingRegressionTests: XCTestCase {
         XCTAssertEqual(candidate.replacement, "Да.")
     }
 
+    func testYesWithQuestionMarkTypedInEnglishIsCorrected() async {
+        let planned = await engine.planCorrection("Lf?", editingEnvironment: .accessibility)
+        guard case .autoReplace(let candidate) = planned.plan else {
+            return XCTFail("Lf? was not auto-corrected: \(String(describing: planned.plan))")
+        }
+        XCTAssertEqual(candidate.replacement, "Да?")
+    }
+
+    func testEnglishWordWithQuestionMarkIsLeftAlone() async {
+        for word in ["Yes?", "No?", "Ok?", "What?"] {
+            let planned = await engine.planCorrection(word, editingEnvironment: .accessibility)
+            if case .autoReplace(let candidate) = planned.plan {
+                XCTFail("\(word) was replaced with \(candidate.replacement)")
+            }
+        }
+    }
+
     func testBareAbbreviationIsStillLeftForContext() async {
         // "lf" alone is a valid English abbreviation; only the punctuation gives it away.
         let planned = await engine.planCorrection("Lf", editingEnvironment: .accessibility)
