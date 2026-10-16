@@ -7,7 +7,8 @@ set -e
 # Signing: SIGNING_IDENTITY, or the first "Developer ID Application" identity in
 # the keychain; without one the app is signed ad hoc (local test builds only).
 # Notarization (skipped when none is set):
-#   NOTARY_KEY_PATH + NOTARY_KEY_ID + NOTARY_ISSUER_ID  App Store Connect API key (.p8)
+#   NOTARY_KEY_PATH + NOTARY_KEY_ID [+ NOTARY_ISSUER_ID]  App Store Connect API key (.p8);
+#                                                       the issuer only for team keys
 #   NOTARY_KEYCHAIN_PROFILE                             profile from `xcrun notarytool store-credentials`
 
 # This is a fork of RightLayout; it ships under its own name and bundle identifier
@@ -173,8 +174,13 @@ if [ -n "$SIGNING_IDENTITY" ]; then
 fi
 
 # Notarize and staple. Notarizing the DMG covers the app inside it.
-if [ -n "$NOTARY_KEY_PATH" ] && [ -n "$NOTARY_KEY_ID" ] && [ -n "$NOTARY_ISSUER_ID" ]; then
-    NOTARY_AUTH=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+# Values pasted into secrets often carry a trailing newline, which notarytool rejects.
+NOTARY_KEY_ID=$(printf '%s' "$NOTARY_KEY_ID" | tr -d '[:space:]')
+NOTARY_ISSUER_ID=$(printf '%s' "$NOTARY_ISSUER_ID" | tr -d '[:space:]')
+if [ -n "$NOTARY_KEY_PATH" ] && [ -n "$NOTARY_KEY_ID" ]; then
+    NOTARY_AUTH=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID")
+    # Team API keys need the issuer; individual keys must go without it.
+    [ -n "$NOTARY_ISSUER_ID" ] && NOTARY_AUTH+=(--issuer "$NOTARY_ISSUER_ID")
 elif [ -n "$NOTARY_KEYCHAIN_PROFILE" ]; then
     NOTARY_AUTH=(--keychain-profile "$NOTARY_KEYCHAIN_PROFILE")
 else
