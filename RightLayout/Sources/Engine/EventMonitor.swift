@@ -174,6 +174,8 @@ public final class EventMonitor {
     private static let boundaryVerificationRetryDelay: UInt64 = 5_000_000
 
     package private(set) var lastReplacement: (deletedCount: Int, insertedText: String)?
+    /// The last hotkey conversion of selected text, so converting it again toggles back.
+    private var lastSelectionConversion: SelectionConversion?
     /// Held Enters that were let through (for tests; nothing is posted with `skipEventPosting`).
     package private(set) var releasedEnterCount = 0
 
@@ -1239,10 +1241,68 @@ public final class EventMonitor {
         )
     }
 
+    private func convertSelection(
+        _ selectionSnapshot: FocusedTextSnapshot,
+        bundleId: String?,
+        hostProfile: HostRuntimeProfile
+    ) async {
+        let selectedText = selectionSnapshot.selectedText
+        let replacement: String
+        let targetLanguage: Language?
+        if let reverted = lastSelectionConversion?.reverting(selectedText) {
+            await engine.resetCycling()
+            replacement = reverted
+            targetLanguage = SelectionConversion.dominantLanguage(of: reverted)
+        } else if let corrected = await engine.correctLastWord(selectedText, bundleId: bundleId) {
+            replacement = corrected
+            targetLanguage = await engine.currentCyclingTargetLanguage()
+        } else {
+            return
+        }
+        guard replacement != selectedText else { return }
+
+        let verified = VerifiedEditContext(
+            snapshot: selectionSnapshot,
+            verifiedRange: selectionSnapshot.selectedRange,
+            verifiedText: selectedText
+        )
+        let applied = await performReplacement(
+            intent: .manualSelection,
+            expectedOriginal: selectedText,
+            replacement: replacement,
+            verifiedContext: verified,
+            allowClipboardFallback: true,
+            allowEventReplayFallback: false,
+            currentVisibleText: selectedText,
+            hostRuntimeProfile: hostProfile,
+            proxy: nil
+        )
+        guard let applied else { return }
+        lastSelectionConversion = SelectionConversion(original: selectedText, replacement: replacement)
+        let transaction = await buildManualTransaction(
+            original: selectedText,
+            replacement: replacement,
+            intent: .manualSelection,
+            bundleId: bundleId
+        )
+        await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified)
+        if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
+            switchInputSourceIfNeeded(to: targetLanguage, transactionId: transaction?.id)
+        }
+    }
+
     private func handleHotkeyPress() async {
         let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let focusedCapabilities = textContextService.resolveFocusedElementCapabilities()
         let hostProfile = currentHostRuntimeProfile(bundleId: bundleId, capabilities: focusedCapabilities?.capabilities)
+
+        // Selected text is what the user wants converted, even right after a correction
+        // that could otherwise be cycled.
+        if let selectionSnapshot = textContextService.snapshotSelectionForManualAction(),
+           !selectionSnapshot.selectedText.isEmpty {
+            await convertSelection(selectionSnapshot, bundleId: bundleId, hostProfile: hostProfile)
+            return
+        }
 
         if await engine.hasCyclingState(),
            let currentVisible = await engine.getCurrentCyclingText() {
@@ -1311,40 +1371,6 @@ public final class EventMonitor {
                 await commitReplacementTransaction(result.transaction, editResult: applied, verifiedContext: verified)
                 if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
                     switchInputSourceIfNeeded(to: result.targetLanguage, transactionId: result.transaction?.id)
-                }
-            }
-            return
-        }
-
-        if let selectionSnapshot = textContextService.snapshotSelectionForManualAction(),
-           !selectionSnapshot.selectedText.isEmpty,
-           let replacement = await engine.correctLastWord(selectionSnapshot.selectedText, bundleId: bundleId) {
-            let verified = VerifiedEditContext(
-                snapshot: selectionSnapshot,
-                verifiedRange: selectionSnapshot.selectedRange,
-                verifiedText: selectionSnapshot.selectedText
-            )
-            let applied = await performReplacement(
-                intent: .manualSelection,
-                expectedOriginal: selectionSnapshot.selectedText,
-                replacement: replacement,
-                verifiedContext: verified,
-                allowClipboardFallback: true,
-                allowEventReplayFallback: false,
-                currentVisibleText: selectionSnapshot.selectedText,
-                hostRuntimeProfile: hostProfile,
-                proxy: nil
-            )
-            if let applied {
-                let transaction = await buildManualTransaction(
-                    original: selectionSnapshot.selectedText,
-                    replacement: replacement,
-                    intent: .manualSelection,
-                    bundleId: bundleId
-                )
-                await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified)
-                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
-                    switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: transaction?.id)
                 }
             }
             return
