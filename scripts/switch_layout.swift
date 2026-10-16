@@ -10,7 +10,7 @@ guard args.count >= 2 else {
 let cmd = args[1]
 
 func getInputSources(includeAll: Bool) -> [TISInputSource] {
-    let filter: [CFString: Any] = [kTISPropertyInputSourceType: kTISTypeKeyboardLayout]
+    let filter: [CFString: Any] = [kTISPropertyInputSourceType: kTISTypeKeyboardLayout as CFString]
     guard let list = TISCreateInputSourceList(filter as CFDictionary, includeAll)?.takeRetainedValue() else {
         return []
     }
