@@ -404,7 +404,7 @@ public final class LayoutMapper: @unchecked Sendable {
             for c in Self.splitIfNeeded(char) {
                 // Preserve special characters that aren't layout-dependent
                 if preserveChars.contains(c) {
-                    result.append(c)
+                    result.append(sentencePunctuation(for: c, sourceMap: sourceMap, fullMap: fullMap, toLayout: toLayout) ?? c)
                     lastWasLetter = false
                     continue
                 }
