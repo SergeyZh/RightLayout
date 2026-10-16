@@ -24,6 +24,7 @@ final class ModelBenchmarkTests: XCTestCase {
         guard #available(macOS 26, *) else {
             throw XCTSkip("Foundation Models benchmark requires macOS 26 or newer")
         }
+        #if canImport(FoundationModels)
 
         print("\n🚀 Starting Model Benchmark: CoreML vs Foundation Models")
         
@@ -86,5 +87,8 @@ final class ModelBenchmarkTests: XCTestCase {
         } else {
             print("✨ Foundation Model performance is surprisingly competitive!")
         }
+        #else
+        throw XCTSkip("Foundation Models benchmark needs an SDK with the FoundationModels framework (Xcode 26 or newer)")
+        #endif
     }
 }
