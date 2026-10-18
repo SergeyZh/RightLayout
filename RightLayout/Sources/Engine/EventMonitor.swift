@@ -1056,6 +1056,10 @@ public final class EventMonitor {
                 if switchedEarly {
                     revertInputSource(to: layoutBeforeSwitch)
                 }
+                // The word stays as typed: the hotkey must correct it, not "undo" a
+                // correction that never happened (which made it work only on the
+                // second press).
+                await engine.resetCycling()
                 updatePhraseBuffer(with: splitBufferContent(token).token)
                 lastCommittedToken = CommittedTokenContext(token: token, separator: separator)
                 setTransliterationHint(nil, separator: separator, commitRevision: expectedMutationSeq)
@@ -1310,27 +1314,21 @@ public final class EventMonitor {
         if await engine.hasCyclingState(),
            let currentVisible = await engine.getCurrentCyclingText() {
             let trailingSeparator = await engine.cyclingTrailingSeparator()
-            let expectedOriginal = currentVisible + trailingSeparator
+            // Check the text first: a press that can't replace anything must not move
+            // the cycle on, or the next press would skip the alternative it was for.
+            let verified = await hotkeyVerification(token: currentVisible, separator: trailingSeparator)
+            guard verified != nil || canUseManualReplayFallback(for: currentVisible + trailingSeparator, hostRuntimeProfile: hostProfile) else { return }
             guard let newText = await engine.cycleCorrection(bundleId: bundleId) else { return }
-            let replacement = newText + trailingSeparator
-            let verified = await verificationContext(
-                forExpectedSuffix: expectedOriginal,
-                preserveSessionOnUnavailable: true
-            )
-            guard verified != nil || canUseManualReplayFallback(for: expectedOriginal, hostRuntimeProfile: hostProfile) else { return }
 
             let cyclingOriginal = await engine.getCyclingOriginalText()
             let intent: TextEditIntent = newText == cyclingOriginal ? .manualUndo : .manualCycle
-            let applied = await performReplacement(
+            let applied = await performHotkeyReplacement(
                 intent: intent,
-                expectedOriginal: expectedOriginal,
-                replacement: replacement,
-                verifiedContext: verified,
-                allowClipboardFallback: false,
-                allowEventReplayFallback: false,
-                currentVisibleText: expectedOriginal,
-                hostRuntimeProfile: hostProfile,
-                proxy: nil
+                token: currentVisible,
+                separator: trailingSeparator,
+                replacement: newText,
+                verified: verified,
+                hostRuntimeProfile: hostProfile
             )
             if let applied {
                 let manualTransaction = await buildManualTransaction(
@@ -1339,7 +1337,7 @@ public final class EventMonitor {
                     intent: intent,
                     bundleId: bundleId
                 )
-                await commitReplacementTransaction(manualTransaction, editResult: applied, verifiedContext: verified)
+                await commitReplacementTransaction(manualTransaction, editResult: applied, verifiedContext: verified?.context)
                 if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
                     switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: manualTransaction?.id)
                 }
@@ -1351,27 +1349,19 @@ public final class EventMonitor {
            let corrected = result.corrected {
             let trailingSeparator = await engine.cyclingTrailingSeparator()
             let original = await engine.getCyclingOriginalText() ?? corrected
-            let expectedOriginal = original + trailingSeparator
-            let verified = await verificationContext(
-                forExpectedSuffix: expectedOriginal,
-                preserveSessionOnUnavailable: true
-            )
-            guard verified != nil || canUseManualReplayFallback(for: expectedOriginal, hostRuntimeProfile: hostProfile) else { return }
-            let replacement = corrected + trailingSeparator
+            let verified = await hotkeyVerification(token: original, separator: trailingSeparator)
+            guard verified != nil || canUseManualReplayFallback(for: original + trailingSeparator, hostRuntimeProfile: hostProfile) else { return }
 
-            let applied = await performReplacement(
+            let applied = await performHotkeyReplacement(
                 intent: .manualCycle,
-                expectedOriginal: expectedOriginal,
-                replacement: replacement,
-                verifiedContext: verified,
-                allowClipboardFallback: false,
-                allowEventReplayFallback: false,
-                currentVisibleText: expectedOriginal,
-                hostRuntimeProfile: hostProfile,
-                proxy: nil
+                token: original,
+                separator: trailingSeparator,
+                replacement: corrected,
+                verified: verified,
+                hostRuntimeProfile: hostProfile
             )
             if let applied {
-                await commitReplacementTransaction(result.transaction, editResult: applied, verifiedContext: verified)
+                await commitReplacementTransaction(result.transaction, editResult: applied, verifiedContext: verified?.context)
                 if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
                     switchInputSourceIfNeeded(to: result.targetLanguage, transactionId: result.transaction?.id)
                 }
@@ -1380,26 +1370,37 @@ public final class EventMonitor {
         }
 
         if !inputSession.typedToken.isEmpty,
-           let replacement = await engine.correctLastWord(inputSession.typedToken, bundleId: bundleId) {
-            let verified = await verificationContext(
-                forExpectedSuffix: inputSession.typedToken,
+           var replacement = await engine.correctLastWord(inputSession.typedToken, bundleId: bundleId) {
+            var original = inputSession.typedToken
+            var verified = await verificationContext(
+                forExpectedSuffix: original,
                 preserveSessionOnUnavailable: true
             )
-            guard verified != nil || canUseManualReplayFallback(for: inputSession.typedToken, hostRuntimeProfile: hostProfile) else { return }
+            // The start of the word may be missing from the typed buffer (it is dropped
+            // after a pause, or when the app moves its focus while showing suggestions);
+            // the field still has it. Convert the whole word, not just its end.
+            if let context = verified,
+               let wholeWord = wholeWordBeforeCaret(endingWith: original, in: context),
+               let wholeReplacement = await engine.correctLastWord(wholeWord.verifiedText, bundleId: bundleId) {
+                original = wholeWord.verifiedText
+                replacement = wholeReplacement
+                verified = wholeWord
+            }
+            guard verified != nil || canUseManualReplayFallback(for: original, hostRuntimeProfile: hostProfile) else { return }
             let applied = await performReplacement(
                 intent: .manualCycle,
-                expectedOriginal: inputSession.typedToken,
+                expectedOriginal: original,
                 replacement: replacement,
                 verifiedContext: verified,
                 allowClipboardFallback: false,
                 allowEventReplayFallback: false,
-                currentVisibleText: inputSession.typedToken,
+                currentVisibleText: original,
                 hostRuntimeProfile: hostProfile,
                 proxy: nil
             )
             if let applied {
                 let transaction = await buildManualTransaction(
-                    original: inputSession.typedToken,
+                    original: original,
                     replacement: replacement,
                     intent: .manualCycle,
                     bundleId: bundleId
@@ -1414,22 +1415,15 @@ public final class EventMonitor {
 
         if let last = lastCommittedToken,
            let replacement = await engine.correctLastWord(last.token, bundleId: bundleId) {
-            let expectedOriginal = last.token + last.separator
-            let verified = await verificationContext(
-                forExpectedSuffix: expectedOriginal,
-                preserveSessionOnUnavailable: true
-            )
-            guard verified != nil || canUseManualReplayFallback(for: expectedOriginal, hostRuntimeProfile: hostProfile) else { return }
-            let applied = await performReplacement(
+            let verified = await hotkeyVerification(token: last.token, separator: last.separator)
+            guard verified != nil || canUseManualReplayFallback(for: last.token + last.separator, hostRuntimeProfile: hostProfile) else { return }
+            let applied = await performHotkeyReplacement(
                 intent: .manualCycle,
-                expectedOriginal: expectedOriginal,
-                replacement: replacement + last.separator,
-                verifiedContext: verified,
-                allowClipboardFallback: false,
-                allowEventReplayFallback: false,
-                currentVisibleText: expectedOriginal,
-                hostRuntimeProfile: hostProfile,
-                proxy: nil
+                token: last.token,
+                separator: last.separator,
+                replacement: replacement,
+                verified: verified,
+                hostRuntimeProfile: hostProfile
             )
             if let applied {
                 let transaction = await buildManualTransaction(
@@ -1438,7 +1432,7 @@ public final class EventMonitor {
                     intent: .manualCycle,
                     bundleId: bundleId
                 )
-                await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified)
+                await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified?.context)
                 if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
                     switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: transaction?.id)
                 }
@@ -1479,6 +1473,92 @@ public final class EventMonitor {
                 }
             }
         }
+    }
+
+    /// Verifies `token` + `separator` before the caret for a hotkey correction.
+    ///
+    /// As at a word boundary, the host may not show the separator yet (ChatGPT, Slack):
+    /// then only the word is verified, and the separator is kept.
+    private func hotkeyVerification(token: String, separator: String) async -> BoundaryVerification? {
+        if !separator.isEmpty,
+           !(skipEventPosting || skipPIDCheck),
+           case .verified(let context) = textContextService.verifyCommittedBoundary(
+               token: token,
+               separator: separator,
+               revision: inputSession.mutationSeq
+           ) {
+            inputSession.lastVerifiedSnapshot = context.snapshot
+            inputSession.isDirty = false
+            return BoundaryVerification(
+                context: context,
+                includesSeparator: context.verifiedText.utf16.count >= (token + separator).utf16.count,
+                trailingText: ""
+            )
+        }
+        guard let context = await verificationContext(
+            forExpectedSuffix: token + separator,
+            preserveSessionOnUnavailable: true
+        ) else {
+            return nil
+        }
+        return BoundaryVerification(context: context, includesSeparator: true, trailingText: "")
+    }
+
+    /// Replaces `token` + `separator`, checked by `hotkeyVerification`, with `replacement`
+    /// followed by the same separator.
+    private func performHotkeyReplacement(
+        intent: TextEditIntent,
+        token: String,
+        separator: String,
+        replacement: String,
+        verified: BoundaryVerification?,
+        hostRuntimeProfile: HostRuntimeProfile
+    ) async -> TextEditResult? {
+        let includesSeparator = verified?.includesSeparator ?? true
+        let expectedOriginal = verified?.context.verifiedText ?? token + separator
+        return await performReplacement(
+            intent: intent,
+            expectedOriginal: expectedOriginal,
+            replacement: replacement + (includesSeparator ? separator : ""),
+            verifiedContext: verified?.context,
+            allowClipboardFallback: false,
+            allowEventReplayFallback: false,
+            currentVisibleText: expectedOriginal,
+            hostRuntimeProfile: hostRuntimeProfile,
+            proxy: nil,
+            unverifiedSuffix: includesSeparator ? "" : separator
+        )
+    }
+
+    /// The word before the caret, when `context` verified only its end (`token`).
+    private func wholeWordBeforeCaret(endingWith token: String, in context: VerifiedEditContext) -> VerifiedEditContext? {
+        let caret = NSMaxRange(context.verifiedRange)
+        guard caret == context.snapshot.selectedRange.location,
+              let range = Self.wholeWordRange(endingWith: token, in: context.snapshot.fullText, caret: caret) else {
+            return nil
+        }
+        return VerifiedEditContext(
+            snapshot: context.snapshot,
+            verifiedRange: range,
+            verifiedText: (context.snapshot.fullText as NSString).substring(with: range)
+        )
+    }
+
+    /// The range of the word that ends at `caret` (a UTF-16 offset), if it is longer
+    /// than `token` and ends with it.
+    nonisolated package static func wholeWordRange(endingWith token: String, in fullText: String, caret: Int) -> NSRange? {
+        let nsText = fullText as NSString
+        guard caret >= 0, caret <= nsText.length else { return nil }
+        let beforeCaret = FocusedTextContextService.comparable(nsText.substring(to: caret))
+        let start = beforeCaret.lastIndex(where: { $0.isWhitespace || $0.isNewline })
+            .map { beforeCaret.index(after: $0) } ?? beforeCaret.startIndex
+        let word = beforeCaret[start...]
+        guard word.count > token.count,
+              word.hasSuffix(FocusedTextContextService.comparable(token)) else {
+            return nil
+        }
+        let length = word.utf16.count
+        return NSRange(location: caret - length, length: length)
     }
 
     private func performReplacement(
