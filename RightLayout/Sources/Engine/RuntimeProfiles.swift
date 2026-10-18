@@ -195,6 +195,7 @@ package enum RuntimeTraceEvent: String, Sendable {
     case planReady = "plan_ready"
     case replacementStarted = "replacement_started"
     case replacementFinished = "replacement_finished"
+    case hotkeyPressed = "hotkey_pressed"
     case layoutSwitchRequested = "layout_switch_requested"
     case layoutSwitchObserved = "layout_switch_observed"
     case sessionInvalidated = "session_invalidated"
@@ -265,8 +266,37 @@ final class ChromiumHostDetector: @unchecked Sendable {
             return false
         }
         let frameworks = appURL.appendingPathComponent("Contents/Frameworks", isDirectory: true)
-        return Self.frameworkMarkers.contains { marker in
+        if Self.frameworkMarkers.contains(where: { marker in
             FileManager.default.fileExists(atPath: frameworks.appendingPathComponent(marker).path)
+        }) {
+            return true
         }
+        return Self.hasChromiumRendererHelper(frameworksPath: frameworks.path)
+    }
+
+    /// Chromium browsers ship their engine in a framework of their own ("Google Chrome
+    /// Framework", ChatGPT Atlas…), but every Chromium app has a "… Helper (Renderer)"
+    /// app: next to the frameworks (Electron) or in the framework's Helpers.
+    static func hasChromiumRendererHelper(frameworksPath: String) -> Bool {
+        let fileManager = FileManager.default
+        guard let items = try? fileManager.contentsOfDirectory(atPath: frameworksPath) else { return false }
+        if items.contains(where: isRendererHelper) {
+            return true
+        }
+        let frameworkHelpers = ["Helpers", "Versions/Current/Helpers"]
+        for item in items where item.hasSuffix(".framework") {
+            for helpers in frameworkHelpers {
+                let path = (frameworksPath as NSString).appendingPathComponent("\(item)/\(helpers)")
+                if let helperItems = try? fileManager.contentsOfDirectory(atPath: path),
+                   helperItems.contains(where: isRendererHelper) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private static func isRendererHelper(_ name: String) -> Bool {
+        name.hasSuffix("Helper (Renderer).app")
     }
 }

@@ -845,6 +845,7 @@ public final class EventMonitor {
             fields: [
                 "bundle_id": bundleId,
                 "host_profile": hostProfile.rawValue,
+                "capabilities": focusedCapabilities.map { Self.traceValue(of: $0.capabilities) },
                 "session_epoch": String(inputSession.sessionEpoch),
                 "mutation_seq": String(inputSession.mutationSeq),
                 "token": token,
@@ -1225,12 +1226,29 @@ public final class EventMonitor {
         InputSourceManager.shared.switchToLayoutId(layoutId)
     }
 
-    private func shouldSwitchLayout(after result: TextEditResult, hostRuntimeProfile: HostRuntimeProfile) -> Bool {
+    private static func traceValue(of capabilities: AppEditCapabilities) -> String {
+        var flags = [capabilities.capabilityClass.rawValue]
+        if capabilities.supportsFullTextRead { flags.append("read") }
+        if capabilities.supportsSelectionRead { flags.append("selection_read") }
+        if capabilities.supportsSelectedTextWrite { flags.append("selected_text_write") }
+        if capabilities.supportsSelectedRangeWrite { flags.append("range_write") }
+        if capabilities.supportsValueWrite { flags.append("value_write") }
+        return flags.joined(separator: ",")
+    }
+
+    /// Whether to switch the layout after a replacement. A retyped word that can't be read
+    /// back only switches it in hosts known to take retyping, unless the user asked for the
+    /// correction (`manual`): they see the result, and expect to keep typing in its layout.
+    private func shouldSwitchLayout(
+        after result: TextEditResult,
+        hostRuntimeProfile: HostRuntimeProfile,
+        manual: Bool = false
+    ) -> Bool {
         switch result.commitKind {
         case .verifiedCommit:
             return true
         case .blindCommit:
-            return hostRuntimeProfile.switchSafeAfterBlindReplay
+            return manual || hostRuntimeProfile.switchSafeAfterBlindReplay
         case .aborted, .rollbackAttempted:
             return false
         }
@@ -1293,7 +1311,7 @@ public final class EventMonitor {
             bundleId: bundleId
         )
         await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified)
-        if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
+        if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile, manual: true) {
             switchInputSourceIfNeeded(to: targetLanguage, transactionId: transaction?.id)
         }
     }
@@ -1302,6 +1320,16 @@ public final class EventMonitor {
         let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let focusedCapabilities = textContextService.resolveFocusedElementCapabilities()
         let hostProfile = currentHostRuntimeProfile(bundleId: bundleId, capabilities: focusedCapabilities?.capabilities)
+        trace.log(
+            .hotkeyPressed,
+            fields: [
+                "bundle_id": bundleId,
+                "host_profile": hostProfile.rawValue,
+                "capabilities": focusedCapabilities.map { Self.traceValue(of: $0.capabilities) },
+                "typed_token": inputSession.typedToken,
+                "last_committed": lastCommittedToken.map { $0.token + $0.separator }
+            ]
+        )
 
         // Selected text is what the user wants converted, even right after a correction
         // that could otherwise be cycled.
@@ -1338,7 +1366,7 @@ public final class EventMonitor {
                     bundleId: bundleId
                 )
                 await commitReplacementTransaction(manualTransaction, editResult: applied, verifiedContext: verified?.context)
-                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
+                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile, manual: true) {
                     switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: manualTransaction?.id)
                 }
             }
@@ -1362,7 +1390,7 @@ public final class EventMonitor {
             )
             if let applied {
                 await commitReplacementTransaction(result.transaction, editResult: applied, verifiedContext: verified?.context)
-                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
+                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile, manual: true) {
                     switchInputSourceIfNeeded(to: result.targetLanguage, transactionId: result.transaction?.id)
                 }
             }
@@ -1406,7 +1434,7 @@ public final class EventMonitor {
                     bundleId: bundleId
                 )
                 await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified)
-                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
+                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile, manual: true) {
                     switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: transaction?.id)
                 }
             }
@@ -1433,7 +1461,7 @@ public final class EventMonitor {
                     bundleId: bundleId
                 )
                 await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified?.context)
-                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
+                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile, manual: true) {
                     switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: transaction?.id)
                 }
             }
@@ -1468,7 +1496,7 @@ public final class EventMonitor {
                     bundleId: bundleId
                 )
                 await commitReplacementTransaction(transaction, editResult: result, verifiedContext: nil)
-                if shouldSwitchLayout(after: result, hostRuntimeProfile: hostProfile) {
+                if shouldSwitchLayout(after: result, hostRuntimeProfile: hostProfile, manual: true) {
                     switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: transaction?.id)
                 }
             }
@@ -1725,7 +1753,9 @@ public final class EventMonitor {
                 fields: [
                     "mode": "suffix",
                     "result": "mismatch",
-                    "expected_text": expectedText
+                    "expected_text": expectedText,
+                    "word_before_caret": seed?.typedToken,
+                    "selection": snapshot.map { NSStringFromRange($0.selectedRange) + "/" + String(($0.fullText as NSString).length) }
                 ]
             )
             if let snapshot, let seed {
@@ -1871,7 +1901,9 @@ public final class EventMonitor {
                         "result": "mismatch",
                         "attempt": String(attempt),
                         "token": token,
-                        "separator": separator
+                        "separator": separator,
+                        "word_before_caret": seed?.typedToken,
+                        "selection": snapshot.map { NSStringFromRange($0.selectedRange) + "/" + String(($0.fullText as NSString).length) }
                     ]
                 )
                 latestSnapshot = snapshot
