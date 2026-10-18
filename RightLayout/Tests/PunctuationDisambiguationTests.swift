@@ -63,6 +63,16 @@ final class PunctuationDisambiguationTests: XCTestCase {
         XCTAssertEqual(manualWord, "сожалению")
     }
 
+    /// A comma next to a lone letter is the "б" key, not a separator: "J,yjdb" is
+    /// "Обнови", not "J,нови".
+    func testCommaAfterSingleLetterIsMappedLetter() async throws {
+        let capitalized = await engine.correctText("J,yjdb", phraseBuffer: "", expectedLayout: nil)
+        XCTAssertEqual(capitalized.corrected, "Обнови")
+
+        let lowercase = await engine.correctText("j,yjdb", phraseBuffer: "", expectedLayout: nil)
+        XCTAssertEqual(lowercase.corrected, "обнови")
+    }
+
     func testLeadingCommaCanBeMappedLetter() async throws {
         let result = await engine.correctText(",tp", phraseBuffer: "", expectedLayout: nil)
         XCTAssertEqual(result.corrected, "без")

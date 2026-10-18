@@ -51,7 +51,7 @@ extension CorrectionEngine {
             // even if it contains a separator like comma/dot.
             let isWholeInDict = (whole.text != "" && BuiltinLexicon.contains(whole.text, language: whole.to ?? .english))
             
-            if isWholeInDict {
+            if isWholeInDict || isPunctuationKeyALetter(original: token, split: split, whole: whole) {
                 best = whole
             } else if confidence < 0.9 && shouldPreferSplitOverWholeForDotCommaSeparator(original: token, split: split, whole: whole) {
                 best = split
@@ -206,6 +206,34 @@ extension CorrectionEngine {
             }
         }
 
+        return false
+    }
+
+    /// Whether punctuation the split candidate keeps inside the word is really a letter
+    /// key typed in the wrong layout: a lone letter next to it can't be a word of its own
+    /// ("J,yjdb" is "Обнови", not "J,нови"), and the whole conversion turns it into a letter.
+    func isPunctuationKeyALetter(
+        original: String,
+        split: SmartCorrection,
+        whole: SmartCorrection
+    ) -> Bool {
+        guard split.text != whole.text,
+              whole.text.count == original.count,
+              whole.text.allSatisfy(\.isLetter) else {
+            return false
+        }
+
+        let parts = splitWordRunsAndDelimiters(original)
+        guard parts.count >= 3 else { return false }
+
+        for i in 1..<(parts.count - 1) {
+            guard !parts[i].isWord, parts[i - 1].isWord, parts[i + 1].isWord else { continue }
+            let leftLetters = parts[i - 1].text.filter(\.isLetter).count
+            let rightLetters = parts[i + 1].text.filter(\.isLetter).count
+            if min(leftLetters, rightLetters) < 2 {
+                return true
+            }
+        }
         return false
     }
 

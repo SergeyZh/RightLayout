@@ -96,7 +96,8 @@ package enum HostRuntimeProfile: String, Codable, Sendable {
             "md.obsidian",
             "com.jetbrains.intellij",
             "com.jetbrains.pycharm",
-            "com.anthropic.claudefordesktop"
+            "com.anthropic.claudefordesktop",
+            "com.openai.chat"
         ]
 
         if exactMatches.contains(normalized) || terminalBundleIds.contains(normalized) {
