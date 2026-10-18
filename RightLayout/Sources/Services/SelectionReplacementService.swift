@@ -277,10 +277,11 @@ final class SelectionReplacementService {
                 range: verifiedRange,
                 replacement: request.replacement
            ) {
-            let postSnapshot = await MainActor.run { FocusedTextContextService.shared.snapshotFocusedText() }
-            let postVerified = postSnapshot.map { post in
-                substring(in: post.fullText, range: NSRange(location: verifiedRange.location, length: request.replacement.utf16.count)) == request.replacement
-            } ?? (snapshot.source == .accessibilityPartial && request.intent == .manualSelection)
+            let readBack = await readBackReplacement(request.replacement, at: verifiedRange.location)
+            let postSnapshot = readBack.snapshot
+            let postVerified = postSnapshot == nil
+                ? snapshot.source == .accessibilityPartial && request.intent == .manualSelection
+                : readBack.verified
 
             if !postVerified,
                let postSnapshot,
@@ -380,10 +381,7 @@ final class SelectionReplacementService {
             }
         }
 
-        let postSnapshot = await MainActor.run { FocusedTextContextService.shared.snapshotFocusedText() }
-        let postVerified = postSnapshot.map { post in
-            substring(in: post.fullText, range: NSRange(location: verifiedRange.location, length: request.replacement.utf16.count)) == request.replacement
-        } ?? false
+        let postVerified = await readBackReplacement(request.replacement, at: verifiedRange.location).verified
 
         lastStrategy = .axValueRewrite
         return TextEditResult(
@@ -394,6 +392,28 @@ final class SelectionReplacementService {
             needsResync: !postVerified,
             commitKind: postVerified ? .verifiedCommit : .aborted
         )
+    }
+
+    /// Reads the field back until `replacement` shows at `location`. Hosts may update
+    /// their AX text a little after a write (ChatGPT, Electron apps); reading only once
+    /// took a done replacement for a failed one, and the layout wasn't switched.
+    private func readBackReplacement(
+        _ replacement: String,
+        at location: Int
+    ) async -> (verified: Bool, snapshot: FocusedTextSnapshot?) {
+        let range = NSRange(location: location, length: replacement.utf16.count)
+        var latest: FocusedTextSnapshot?
+        for attempt in 0..<5 {
+            if attempt > 0 {
+                try? await Task.sleep(nanoseconds: 40_000_000)
+            }
+            latest = await MainActor.run { FocusedTextContextService.shared.snapshotFocusedText() }
+            guard let snapshot = latest else { return (false, nil) }
+            if substring(in: snapshot.fullText, range: range) == replacement {
+                return (true, snapshot)
+            }
+        }
+        return (false, latest)
     }
 
     private func replaceSelectedRange(
