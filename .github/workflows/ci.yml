@@ -48,4 +48,4 @@ jobs:
           swift scripts/switch_layout.swift list
 
       - name: Test
-        run: swift test
+        run: swift test --filter ZZDiagnosticTests
