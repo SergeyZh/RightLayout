@@ -85,22 +85,25 @@ final class HostRuntimeProfileTests: XCTestCase {
     /// The ChatGPT app takes retyped words, so words are corrected there automatically
     /// too, not only with the hotkey.
     func testChatGPTDesktopResolvesToBlindKnownGood() {
-        let profile = HostRuntimeProfile.resolve(
-            bundleId: "com.openai.chat",
-            capabilities: AppEditCapabilities(
-                supportsSelectedTextWrite: false,
-                supportsSelectedRangeWrite: false,
-                supportsValueWrite: false,
-                supportsSelectionRead: false,
-                supportsFullTextRead: false,
-                isSecureOrReadBlind: true,
-                capabilityClass: .blind,
-                elementFingerprint: nil
+        // The current ChatGPT app is "com.openai.codex"; older builds were "com.openai.chat".
+        for bundleId in ["com.openai.chat", "com.openai.codex"] {
+            let profile = HostRuntimeProfile.resolve(
+                bundleId: bundleId,
+                capabilities: AppEditCapabilities(
+                    supportsSelectedTextWrite: false,
+                    supportsSelectedRangeWrite: false,
+                    supportsValueWrite: false,
+                    supportsSelectionRead: false,
+                    supportsFullTextRead: false,
+                    isSecureOrReadBlind: true,
+                    capabilityClass: .blind,
+                    elementFingerprint: nil
+                )
             )
-        )
 
-        XCTAssertEqual(profile, .blindKnownGood)
-        XCTAssertTrue(profile.allowsAutomaticBlindReplay)
+            XCTAssertEqual(profile, .blindKnownGood, bundleId)
+            XCTAssertTrue(profile.allowsAutomaticBlindReplay, bundleId)
+        }
     }
 
     func testKnownGoodHostWithPartialAXWithoutTextResolvesToBlindKnownGood() {
