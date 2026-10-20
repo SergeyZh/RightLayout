@@ -122,6 +122,14 @@ public final class SettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(isVerifierEnabled, forKey: "isVerifierEnabled") }
     }
 
+    /// Keep the last minutes of what RightLayout saw and did, for problem reports.
+    @Published var isDetailedLogEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(isDetailedLogEnabled, forKey: "isDetailedLogEnabled")
+            DiagnosticJournal.shared.setEnabled(isDetailedLogEnabled)
+        }
+    }
+
     /// Ticket 72: Foundation Model classifier for ambiguous tokens (macOS 26+).
     @Published var isFoundationModelEnabled: Bool {
         didSet { UserDefaults.standard.set(isFoundationModelEnabled, forKey: "isFoundationModelEnabled") }
@@ -408,6 +416,7 @@ public final class SettingsManager: ObservableObject {
         let isTesting = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         self.isVerifierEnabled = UserDefaults.standard.object(forKey: "isVerifierEnabled") as? Bool ?? !isTesting
         self.isFoundationModelEnabled = UserDefaults.standard.object(forKey: "isFoundationModelEnabled") as? Bool ?? true
+        self.isDetailedLogEnabled = UserDefaults.standard.object(forKey: "isDetailedLogEnabled") as? Bool ?? false
         self.checkForUpdatesAutomatically = UserDefaults.standard.object(forKey: "checkForUpdatesAutomatically") as? Bool ?? true
 
         self.holdEnterForCorrection = UserDefaults.standard.object(forKey: "holdEnterForCorrection") as? Bool ?? true
@@ -468,6 +477,7 @@ public final class SettingsManager: ObservableObject {
         
         // Initialize resource bundle now that all properties are set
         self.updateResourceBundle()
+        DiagnosticJournal.shared.setEnabled(isDetailedLogEnabled)
     }
 
     /// Auto-detect keyboard layout variants from macOS

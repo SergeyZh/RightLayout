@@ -608,6 +608,7 @@ public final class EventMonitor {
         if !inputSession.typedToken.isEmpty,
            let last = lastKeyTime,
            now.timeIntervalSince(last) > ThresholdsConfig.shared.timing.bufferTimeout {
+            trace.log(.bufferTimeout, fields: ["dropped": inputSession.typedToken])
             inputSession.typedToken = ""
             boundaryGeneration &+= 1
             keyTimings.removeAll()
@@ -646,6 +647,17 @@ public final class EventMonitor {
 
         inputSession.typedToken.append(chars)
         bumpSessionMutation(at: now)
+        if trace.isEnabled {
+            trace.log(
+                .keyTyped,
+                fields: [
+                    "chars": chars,
+                    "key_code": String(keyCode),
+                    "buffer": inputSession.typedToken,
+                    "layout": InputSourceManager.shared.currentLayoutId()
+                ]
+            )
+        }
 
         if let last = lastKeyTime {
             keyTimings.append(now.timeIntervalSince(last))
@@ -764,6 +776,7 @@ public final class EventMonitor {
 
     private func handleBackspace() {
         clearTransliterationHint()
+        trace.log(.backspace, fields: ["buffer": inputSession.typedToken])
 
         if !inputSession.typedToken.isEmpty {
             inputSession.typedToken.removeLast()
@@ -890,7 +903,13 @@ public final class EventMonitor {
                 "confidence": planned.result.confidence.map { String(format: "%.3f", $0) },
                 "action": planned.plan.traceValue,
                 "target_language": planned.result.targetLanguage?.rawValue,
-                "token": token
+                "token": token,
+                "corrected": planned.result.corrected,
+                "pending": planned.result.pendingOriginal.map { "\($0)→\(planned.result.pendingCorrection ?? "")" },
+                "hypothesis": planned.result.evidence?.decision.layoutHypothesis.rawValue,
+                "token_kind": planned.result.evidence.map { String(describing: $0.tokenKind) },
+                "margin": planned.result.evidence.map { String(format: "%.3f", $0.winnerMargin) },
+                "phrase": inputSession.phraseContext
             ]
         )
 

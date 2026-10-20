@@ -38,6 +38,7 @@ public final class DecisionLogger: @unchecked Sendable {
     }
     
     func log(_ message: String) {
+        DiagnosticJournal.shared.record(message)
         guard enabled, let url = logURL else { return }
         queue.async {
             let timestamp = ISO8601DateFormatter().string(from: Date())

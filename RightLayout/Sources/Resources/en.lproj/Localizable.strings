@@ -448,3 +448,9 @@
 "Tap" = "Tap";
 "Glass" = "Glass";
 "Blip" = "Blip";
+
+/* Problem report */
+"Detailed log" = "Detailed log";
+"Copy problem report" = "Copy problem report";
+"Report copied" = "Report copied";
+"Keeps the last minutes of what RightLayout saw and did, including the words you type, in memory only. When something goes wrong, copy the report and send it with a short note." = "Keeps the last minutes of what RightLayout saw and did, including the words you type, in memory only. When something goes wrong, copy the report and send it with a short note.";

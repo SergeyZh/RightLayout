@@ -325,3 +325,9 @@
 "No manual rules yet" = "עדיין אין כללים ידניים";
 "Add an explicit rule when a specific word should always stay unchanged or prefer one language." = "הוסף כלל מפורש כאשר מילה מסוימת צריכה תמיד להישאר ללא שינוי או להעדיף שפה אחת.";
 "Estimated from correction events" = "הערכה על בסיס אירועי תיקון";
+
+/* Problem report */
+"Detailed log" = "יומן מפורט";
+"Copy problem report" = "העתק דוח בעיה";
+"Report copied" = "הדוח הועתק";
+"Keeps the last minutes of what RightLayout saw and did, including the words you type, in memory only. When something goes wrong, copy the report and send it with a short note." = "שומר בזיכרון בלבד את הדקות האחרונות של מה ש-RightLayout ראה ועשה, כולל המילים שאתה מקליד. כשמשהו משתבש, העתק את הדוח ושלח אותו עם הערה קצרה.";

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct DecisionLogView: View {
     @StateObject private var logStore = DecisionLogStore.shared
+    @ObservedObject private var settings = SettingsManager.shared
+    @State private var reportCopied = false
     private let bundle = SettingsManager.shared.resourceBundle
     private let showsHeader: Bool
 
@@ -20,6 +22,39 @@ struct DecisionLogView: View {
                         .font(Theme.Typography.body())
                         .foregroundStyle(Theme.Color.textSecondary)
                 }
+            }
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                HStack(spacing: Theme.Spacing.md) {
+                    Toggle(isOn: $settings.isDetailedLogEnabled) {
+                        Text("Detailed log", bundle: bundle)
+                            .font(Theme.Typography.label())
+                            .foregroundStyle(Theme.Color.textPrimary)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+
+                    Spacer()
+
+                    Button {
+                        Clipboard.copy(ProblemReport.make())
+                        reportCopied = true
+                    } label: {
+                        Label(
+                            UIStrings.text(reportCopied ? "Report copied" : "Copy problem report"),
+                            systemImage: reportCopied ? "checkmark" : "doc.text"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .secondaryActionButton()
+                }
+                Text("Keeps the last minutes of what RightLayout saw and did, including the words you type, in memory only. When something goes wrong, copy the report and send it with a short note.", bundle: bundle)
+                    .font(Theme.Typography.meta())
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .onChange(of: logStore.entries.count) { _ in
+                reportCopied = false
             }
 
             HStack(spacing: Theme.Spacing.md) {
@@ -61,8 +96,9 @@ struct DecisionLogView: View {
                 )
                 .frame(minHeight: 260)
             } else {
+                // Newest first, like History.
                 ScrollViewReader { proxy in
-                    List(logStore.entries) { entry in
+                    List(Array(logStore.entries.reversed())) { entry in
                         DecisionEntryRow(entry: entry)
                             .id(entry.id)
                             .listRowSeparator(.hidden)
@@ -70,8 +106,8 @@ struct DecisionLogView: View {
                     }
                     .listStyle(.plain)
                     .onChange(of: logStore.entries.count) { _ in
-                        if let last = logStore.entries.last, !logStore.isPaused {
-                            proxy.scrollTo(last.id, anchor: .bottom)
+                        if let newest = logStore.entries.last, !logStore.isPaused {
+                            proxy.scrollTo(newest.id, anchor: .top)
                         }
                     }
                 }
@@ -81,7 +117,7 @@ struct DecisionLogView: View {
     }
 
     private func copyEntries() {
-        let text = logStore.entries.map { entry in
+        let text = logStore.entries.reversed().map { entry in
             let confidence = entry.confidence.map { String(format: "%.0f%%", $0 * 100) } ?? "—"
             return "[\(entry.timestamp.formatted(date: .omitted, time: .standard))] \(displayAction(for: entry.action)) \(entry.token) conf=\(confidence) app=\(entry.appName ?? "—") hyp=\(entry.hypothesis ?? "—")"
         }.joined(separator: "\n")
