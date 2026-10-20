@@ -6,12 +6,16 @@ import XCTest
 final class FieldReportRegressionTests: XCTestCase {
     private var engine: CorrectionEngine!
     private var originalLanguages: Set<Language>?
+    private var originalLayouts: [String: String] = [:]
+    private var originalLearning = true
     private let layouts = ["en": "us", "ru": "russianwin", "he": "hebrew"]
     private let enRu: Set<Language> = [.english, .russian]
 
     @MainActor
     override func setUp() async throws {
         let settings = SettingsManager.shared
+        originalLayouts = settings.activeLayouts
+        originalLearning = settings.isLearningEnabled
         settings.isEnabled = true
         settings.activeLayouts = layouts
         settings.isLearningEnabled = false
@@ -22,7 +26,10 @@ final class FieldReportRegressionTests: XCTestCase {
 
     @MainActor
     override func tearDown() async throws {
-        SettingsManager.shared.customEnabledLanguages = originalLanguages
+        let settings = SettingsManager.shared
+        settings.customEnabledLanguages = originalLanguages
+        settings.activeLayouts = originalLayouts
+        settings.isLearningEnabled = originalLearning
         engine = nil
     }
 
