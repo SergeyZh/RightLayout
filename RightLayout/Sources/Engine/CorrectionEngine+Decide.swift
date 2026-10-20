@@ -82,7 +82,13 @@ extension CorrectionEngine {
         if let expected = expectedLayout {
             logger.info("Expected layout: \(expected.rawValue, privacy: .public)")
         }
-        
+
+        // Abbreviations and emoticons aren't words, so the routing below can't judge them;
+        // and "n/r/" would be taken for a path by the intent check.
+        if let shorthand = await shorthandCorrection(for: text) {
+            return shorthand
+        }
+
         // Ticket 42: Safety Gating (Code/URL detection)
         // Check if text looks like code or URL/Command before expensive routing
         let intent = await intentDetector.detect(text: text)
@@ -1018,6 +1024,56 @@ extension CorrectionEngine {
         return (corrected, transaction)
     }
 
+    func shorthandCorrection(for text: String) async -> CorrectionResult? {
+        let enabled = await settings.enabledLanguages
+        let activeLayouts = await settings.activeLayouts
+        guard let match = WrongLayoutShorthand.match(text, enabledLanguages: enabled, activeLayouts: activeLayouts) else {
+            return nil
+        }
+        logger.info("✍️ Shorthand: '\(text)' → '\(match.text)'")
+
+        let bundleId = await MainActor.run { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
+        let hypothesis = hypothesisFor(source: match.from, target: match.to)
+        // An emoticon is no reason to leave the layout the user is typing in.
+        let isEmoticon = WrongLayoutShorthand.isEmoticon(match.text)
+        let (applied, transaction) = await applyCorrection(
+            original: text,
+            corrected: match.text,
+            from: match.from,
+            to: match.to,
+            hypothesis: hypothesis,
+            bundleId: bundleId,
+            riskPolicy: .autoApply,
+            confidence: 1.0,
+            correctionPolicy: .autoApplied
+        )
+        cyclingState = CyclingContext(
+            originalText: text,
+            alternatives: [
+                CyclingContext.Alternative(text: text, hypothesis: nil),
+                CyclingContext.Alternative(text: applied, hypothesis: isEmoticon ? nil : hypothesis)
+            ],
+            currentIndex: 1,
+            wasAutomatic: true,
+            autoHypothesis: hypothesis,
+            timestamp: Date(),
+            trailingSeparator: "",
+            visibleAlternativesCount: 2,
+            cycleCount: 0
+        )
+        return CorrectionResult(
+            corrected: applied,
+            action: .applied,
+            pendingCorrection: nil,
+            pendingOriginal: nil,
+            trackingId: transaction?.id,
+            transaction: transaction,
+            transliterationSuggestion: nil,
+            confidence: 1.0,
+            targetLanguage: isEmoticon ? nil : match.to
+        )
+    }
+
     /// Apply correction based on a decision (for pending word boost)
     func applyCorrection(_ text: String, decision: LanguageDecision, bundleId: String? = nil, riskPolicy: RiskPolicy) async -> String? {
         let sourceLayout: Language
@@ -1074,6 +1130,15 @@ extension CorrectionEngine {
                 continue
             }
 
+            // Any letter is a likely string to a language model, so a single one must be
+            // a word of its own: a Russian "с" before an English word is not "c".
+            if converted.count == 1 {
+                if Self.singleLetterWords[targetLanguage]?.contains(converted.lowercased()) == true {
+                    return converted
+                }
+                continue
+            }
+
             if BuiltinLexicon.contains(converted, language: targetLanguage) {
                 return converted
             }
@@ -1081,14 +1146,15 @@ extension CorrectionEngine {
             if let unigram = unigramModels[targetLanguage], unigram.score(converted) > 0.0001 {
                 return converted
             }
-
-            if converted.filter(\.isLetter).count <= 2, converted.allSatisfy(\.isLetter) {
-                return converted
-            }
         }
 
         return nil
     }
+
+    static let singleLetterWords: [Language: Set<String>] = [
+        .english: ["a", "i"],
+        .russian: ["а", "в", "и", "к", "о", "с", "у", "я"]
+    ]
 
     func shortWordCorrectionCandidate(for text: String) async -> (replacement: String, targetLanguage: Language, hypothesis: LanguageHypothesis)? {
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)

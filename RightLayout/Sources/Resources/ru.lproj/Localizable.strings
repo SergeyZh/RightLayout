@@ -448,3 +448,9 @@
 "Tap" = "Стук";
 "Glass" = "Стекло";
 "Blip" = "Блип";
+
+/* Problem report */
+"Detailed log" = "Подробный журнал";
+"Copy problem report" = "Скопировать отчёт о проблеме";
+"Report copied" = "Отчёт скопирован";
+"Keeps the last minutes of what RightLayout saw and did, including the words you type, in memory only. When something goes wrong, copy the report and send it with a short note." = "Хранит последние минуты того, что RightLayout видел и делал, включая набираемые слова, — только в памяти. Когда что-то пошло не так, скопируйте отчёт и отправьте его с коротким описанием.";

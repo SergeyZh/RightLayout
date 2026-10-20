@@ -200,22 +200,30 @@ package enum RuntimeTraceEvent: String, Sendable {
     case layoutSwitchRequested = "layout_switch_requested"
     case layoutSwitchObserved = "layout_switch_observed"
     case sessionInvalidated = "session_invalidated"
+    case keyTyped = "key_typed"
+    case backspace = "backspace"
+    case bufferTimeout = "buffer_timeout"
 }
 
 package final class RuntimeTraceLogger: @unchecked Sendable {
     package static let shared = RuntimeTraceLogger()
 
-    private let enabled: Bool
+    private let environmentEnabled: Bool
 
     private init() {
         let environment = ProcessInfo.processInfo.environment
-        enabled =
+        environmentEnabled =
             environment["RIGHTLAYOUT_RUNTIME_TRACE"] == "1"
             || environment["RightLayout_RUNTIME_TRACE"] == "1"
     }
 
+    /// On with the environment variable, or while "Detailed log" is on.
+    package var isEnabled: Bool {
+        environmentEnabled || DiagnosticJournal.shared.isEnabled
+    }
+
     package func log(_ event: RuntimeTraceEvent, fields: [String: String?]) {
-        guard enabled else { return }
+        guard isEnabled else { return }
 
         let payload = fields
             .compactMap { key, value -> String? in
