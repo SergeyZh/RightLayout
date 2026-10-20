@@ -1099,7 +1099,12 @@ public final class EventMonitor {
                 currentVisibleText: expectedOriginal,
                 hostRuntimeProfile: hostProfile,
                 proxy: proxy,
-                unverifiedSuffix: verification.map { $0.includesSeparator ? "" : separator } ?? ""
+                unverifiedSuffix: verification.map { $0.includesSeparator ? "" : separator } ?? "",
+                typedTailTransform: typedTailTransform(
+                    switchedEarly: switchedEarly,
+                    from: transaction?.hypothesis?.sourceLanguage ?? currentLanguage,
+                    to: targetLanguage
+                )
             )
             guard let applied else {
                 if switchedEarly {
@@ -1171,10 +1176,28 @@ public final class EventMonitor {
             let head = String(characters[..<headCount])
             result = mapper.convert(head, from: source, to: target, activeLayouts: activeLayouts) ?? head
         }
-        for character in characters[headCount...] {
+        result += Self.convertLettersTypedAfterSwitch(
+            String(characters[headCount...]),
+            from: source,
+            to: target,
+            activeLayouts: activeLayouts
+        )
+        return result
+    }
+
+    /// Letters typed after a layout switch may still arrive in the old layout (Chromium
+    /// apps pick the switch up late); convert those, and leave everything else.
+    nonisolated static func convertLettersTypedAfterSwitch(
+        _ text: String,
+        from source: Language,
+        to target: Language,
+        activeLayouts: [String: String]
+    ) -> String {
+        var result = ""
+        for character in text {
             let original = String(character)
             if character.isLetter,
-               let converted = mapper.convert(original, from: source, to: target, activeLayouts: activeLayouts),
+               let converted = LayoutMapper.shared.convert(original, from: source, to: target, activeLayouts: activeLayouts),
                converted != original,
                converted.allSatisfy({ $0.isLetter }) {
                 result += converted
@@ -1183,6 +1206,17 @@ public final class EventMonitor {
             }
         }
         return result
+    }
+
+    /// Converts the letters typed between reading the text back and retyping it, the
+    /// same way as the ones read back: they were typed after the early switch too
+    /// ("ghbdtn tcnm" became "привет еcnm").
+    private func typedTailTransform(switchedEarly: Bool, from source: Language?, to target: Language?) -> (@Sendable (String) -> String)? {
+        guard switchedEarly, let source, let target, source != target else { return nil }
+        let activeLayouts = settings.activeLayouts
+        return { tail in
+            Self.convertLettersTypedAfterSwitch(tail, from: source, to: target, activeLayouts: activeLayouts)
+        }
     }
 
     @discardableResult
@@ -1599,7 +1633,8 @@ public final class EventMonitor {
         currentVisibleText: String,
         hostRuntimeProfile: HostRuntimeProfile,
         proxy: CGEventTapProxy?,
-        unverifiedSuffix: String = ""
+        unverifiedSuffix: String = "",
+        typedTailTransform: (@Sendable (String) -> String)? = nil
     ) async -> TextEditResult? {
         replacementService.setSkipEventPosting(skipEventPosting)
         runtimeState = .replacing
@@ -1620,7 +1655,8 @@ public final class EventMonitor {
             allowEventReplayFallback: allowEventReplayFallback,
             sessionIsDirty: inputSession.isDirty,
             currentTypedToken: currentVisibleText,
-            unverifiedSuffix: unverifiedSuffix
+            unverifiedSuffix: unverifiedSuffix,
+            typedTailTransform: typedTailTransform
         )
 
         let result = await applyRequest(request, proxy: proxy)
@@ -1835,7 +1871,7 @@ public final class EventMonitor {
         var latestSeed: InputSessionSeed?
         var lastAttemptMismatched = false
 
-        for attempt in 0..<Self.boundaryVerificationAttempts {
+        attempts: for attempt in 0..<Self.boundaryVerificationAttempts {
             if attempt > 0 {
                 try? await Task.sleep(nanoseconds: Self.boundaryVerificationRetryDelay)
             }
@@ -1858,6 +1894,25 @@ public final class EventMonitor {
                 )
 
             switch result {
+            case .verified(let context) where Self.continuesWordBefore(context):
+                // The buffer held only the end of a word: it is dropped after a pause, or
+                // when the app moves its focus. Correcting that end alone breaks the word
+                // ("всякийс лучай" became "всякийc kexfq"), so leave it, and take the
+                // field's word as the session's.
+                trace.log(
+                    .verificationResult,
+                    fields: [
+                        "mode": "boundary",
+                        "result": "partial_word",
+                        "attempt": String(attempt),
+                        "token": token,
+                        "verified_text": context.verifiedText
+                    ]
+                )
+                latestSnapshot = context.snapshot
+                latestSeed = textContextService.seedSession(from: context.snapshot)
+                lastAttemptMismatched = true
+                break attempts
             case .verified(let context):
                 trace.log(
                     .verificationResult,
@@ -1923,6 +1978,20 @@ public final class EventMonitor {
         clearTransliterationHint()
         Task { await engine.resetCycling() }
         return nil
+    }
+
+    /// Whether the verified text starts in the middle of a word: a letter or digit
+    /// right before it in the field.
+    nonisolated static func continuesWordBefore(_ context: VerifiedEditContext) -> Bool {
+        continuesWordBefore(location: context.verifiedRange.location, in: context.snapshot.fullText)
+    }
+
+    nonisolated static func continuesWordBefore(location: Int, in fullText: String) -> Bool {
+        let text = fullText as NSString
+        guard location > 0, location <= text.length else { return false }
+        let previous = text.rangeOfComposedCharacterSequence(at: location - 1)
+        guard let character = text.substring(with: previous).first else { return false }
+        return character.isLetter || character.isNumber
     }
 
     private func canUseManualReplayFallback(

@@ -48,6 +48,8 @@ struct TextEditRequest: @unchecked Sendable {
     /// that the host's text didn't show yet when the word was verified. Retyping must
     /// remove and restore them as well, since they're in the field by then.
     var unverifiedSuffix: String = ""
+    /// Applied to characters typed after the verified text when they are retyped.
+    var typedTailTransform: (@Sendable (String) -> String)? = nil
 }
 
 struct TextEditResult: @unchecked Sendable {
@@ -517,7 +519,7 @@ final class SelectionReplacementService {
             return aborted
         }
         let deleteCount = plan.deleteCount
-        let tail = plan.tail
+        let tail = plan.tailIsUnverified ? plan.tail : (request.typedTailTransform?(plan.tail) ?? plan.tail)
 
         trace.log(
             .replacementStarted,

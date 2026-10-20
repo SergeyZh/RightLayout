@@ -96,7 +96,15 @@ extension CorrectionEngine {
         
         // 0. Original
         finalCandidates.append(CyclingContext.Alternative(text: text, hypothesis: nil))
-        
+
+        // An abbreviation or emoticon in the wrong layout ("n/r/", "Ж-)") is what was meant.
+        if let shorthand = WrongLayoutShorthand.match(text, enabledLanguages: enabled, activeLayouts: activeLayouts) {
+            let hypothesis = WrongLayoutShorthand.isEmoticon(shorthand.text)
+                ? nil
+                : hypothesisFor(source: shorthand.from, target: shorthand.to)
+            finalCandidates.append(CyclingContext.Alternative(text: shorthand.text, hypothesis: hypothesis))
+        }
+
         // 1. Add Smart Correction if available (High confidence)
         if let smart = smartCorrected, smart != text {
             finalCandidates.append(CyclingContext.Alternative(text: smart, hypothesis: decision.layoutHypothesis))
