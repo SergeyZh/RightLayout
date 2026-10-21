@@ -1148,6 +1148,7 @@ public final class EventMonitor {
                 hostProfile.allowsAutomaticBlindReplay &&
                 shouldAllowAutomaticReplayFallback(
                     for: token + separator,
+                    replacement: candidate.replacement,
                     confidence: planned.result.confidence,
                     hostRuntimeProfile: hostProfile
                 )
@@ -2241,6 +2242,7 @@ public final class EventMonitor {
 
     private func shouldAllowAutomaticReplayFallback(
         for expectedText: String,
+        replacement: String,
         confidence: Double?,
         hostRuntimeProfile: HostRuntimeProfile
     ) -> Bool {
@@ -2251,8 +2253,7 @@ public final class EventMonitor {
             return false
         }
 
-        let trimmed = expectedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let word = CorrectionDecisionPolicy.letterCore(of: trimmed, typedInWrongLayout: true),
+        guard let word = Self.blindReplayWord(original: expectedText, replacement: replacement),
               word.count >= max(1, settings.minAutoCorrectWordLength),
               word.count <= 18 else {
             return false
@@ -2267,6 +2268,23 @@ public final class EventMonitor {
         }
 
         return true
+    }
+
+    /// The word a blind retype replaces, or nil if it isn't one. Its letters are those of
+    /// the typed text, or of the replacement when keys that are punctuation on the typed
+    /// layout are letters on the other ("Yf;fk" → "Нажал").
+    nonisolated static func blindReplayWord(original: String, replacement: String) -> Substring? {
+        let trimmed = original.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let word = CorrectionDecisionPolicy.letterCore(of: trimmed, typedInWrongLayout: true) {
+            return word
+        }
+        let converted = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let word = CorrectionDecisionPolicy.letterCore(of: converted),
+              word.count == converted.count,
+              converted.count == trimmed.count else {
+            return nil
+        }
+        return word
     }
 
     private func syntheticVerifiedContext(for expectedText: String) -> VerifiedEditContext {

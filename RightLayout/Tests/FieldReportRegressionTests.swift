@@ -96,6 +96,20 @@ final class FieldReportRegressionTests: XCTestCase {
         XCTAssertNil(WrongLayoutShorthand.match("n/r/", enabledLanguages: [.english, .hebrew], activeLayouts: layouts))
     }
 
+    // MARK: "Yf;fk" was only converted by the hotkey in the Claude app
+
+    func testWordWithPunctuationKeysIsCorrectedWhereTextCannotBeReadBack() async {
+        for (typed, expected) in [("Yf;fk", "Нажал"), ("Drk.xbk", "Включил")] {
+            let planned = await engine.planCorrection(typed, editingEnvironment: .nonAccessibility)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("\(typed): expected an automatic correction, got \(planned.plan)")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, expected)
+            XCTAssertEqual(planned.result.targetLanguage, .russian)
+        }
+    }
+
     // MARK: A "." after a Slack mention was held for the hotkey as "ю"
 
     func testLonePeriodIsLeftAlone() async {
