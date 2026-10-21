@@ -96,6 +96,51 @@ final class FieldReportRegressionTests: XCTestCase {
         XCTAssertNil(WrongLayoutShorthand.match("n/r/", enabledLanguages: [.english, .hebrew], activeLayouts: layouts))
     }
 
+    // MARK: "Yf;fk" was only converted by the hotkey in the Claude app
+
+    func testWordWithPunctuationKeysIsCorrectedWhereTextCannotBeReadBack() async {
+        // The reporter works in English and Russian.
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
+        for (typed, expected) in [("Yf;fk", "Нажал"), ("Drk.xbk", "Включил")] {
+            let planned = await engine.planCorrection(typed, editingEnvironment: .nonAccessibility)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("\(typed): expected an automatic correction, got \(planned.plan)")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, expected)
+            XCTAssertEqual(planned.result.targetLanguage, .russian)
+        }
+    }
+
+    func testWordWithPunctuationKeysIsNeverConvertedInPieces() async {
+        // With Hebrew on too, "Yf;fk" was split at ";" and its end converted alone:
+        // "Yf;כל".
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            for (typed, expected) in [("Yf;fk", "Нажал"), ("Drk.xbk", "Включил")] {
+                let planned = await engine.planCorrection(typed, editingEnvironment: environment)
+                if case .autoReplace(let candidate) = planned.plan {
+                    XCTAssertEqual(candidate.replacement, expected, "\(typed) (\(environment))")
+                }
+            }
+        }
+    }
+
+    // MARK: A "." after a Slack mention was held for the hotkey as "ю"
+
+    func testLonePeriodIsLeftAlone() async {
+        for token in [".", ","] {
+            let planned = await engine.planCorrection(token)
+            switch planned.plan {
+            case .none:
+                break
+            default:
+                XCTFail("\"\(token)\" must be left alone, got \(planned.plan)")
+            }
+        }
+        let suggestion = await engine.applyPendingSuggestion()
+        XCTAssertNil(suggestion, "Nothing may be waiting for the hotkey")
+    }
+
     // MARK: "На всякийс лучай" became "На всякийc kexfq"
 
     func testTextStartingInsideAWordIsNotAWholeWord() {

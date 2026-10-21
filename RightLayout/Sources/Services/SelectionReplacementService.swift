@@ -504,10 +504,15 @@ final class SelectionReplacementService {
             return aborted
         }
 
-        let selection = current.selectedRange
-        if let expectedCaret, selection != expectedCaret {
+        if let expectedCaret, current.selectedRange != expectedCaret {
             return aborted
         }
+        let selection = Self.replaySelection(
+            fullText: current.fullText,
+            selection: current.selectedRange,
+            verifiedRange: verifiedRange,
+            expectedOriginal: request.expectedOriginal
+        )
 
         guard let plan = Self.verifiedReplayPlan(
             fullText: current.fullText,
@@ -546,8 +551,9 @@ final class SelectionReplacementService {
         let acceptedSuffixes = plan.tailIsUnverified ? [typed, request.replacement] : [typed]
         for attempt in 0..<5 {
             try? await Task.sleep(nanoseconds: attempt == 0 ? timing.postApplyDelay : 30_000_000)
+            guard let snapshot = service.snapshotFocusedText() else { continue }
             for suffix in acceptedSuffixes {
-                guard case .verified(let context) = service.verifyExpectedSuffix(suffix, revision: request.sessionRevision) else {
+                guard case .verified(let context) = FocusedTextContextService.verifyExpectedSuffix(suffix, in: snapshot) else {
                     continue
                 }
                 return TextEditResult(
@@ -559,10 +565,53 @@ final class SelectionReplacementService {
                     commitKind: .verifiedCommit
                 )
             }
+            // Characters typed meanwhile follow the retyped text, which still starts
+            // where the deleted text did.
+            if Self.showsRetypedText(typed, at: verifiedRange.location, in: snapshot.fullText) {
+                return TextEditResult(
+                    strategy: .eventReplayTransaction,
+                    appliedText: request.replacement,
+                    caretRange: NSRange(location: verifiedRange.location + typed.utf16.count, length: 0),
+                    postVerified: true,
+                    needsResync: false,
+                    commitKind: .verifiedCommit
+                )
+            }
         }
 
         logger.warning("Retyped text could not be verified")
         return aborted
+    }
+
+    /// The caret to retype from. Slack can report it a character or two behind the text
+    /// it shows; deleting from there left the word's first letter ("Скуысуте|Ж" became
+    /// "СCrescent"). When the verified text ends the field and the caret is inside it,
+    /// the caret is at its end.
+    nonisolated static func replaySelection(
+        fullText: String,
+        selection: NSRange,
+        verifiedRange: NSRange,
+        expectedOriginal: String
+    ) -> NSRange {
+        guard selection.location > verifiedRange.location,
+              let caret = FocusedTextContextService.laggingCaretLocation(
+                  fullText: fullText,
+                  selection: selection,
+                  typedTail: expectedOriginal
+              ),
+              caret == NSMaxRange(verifiedRange) else {
+            return selection
+        }
+        return NSRange(location: caret, length: 0)
+    }
+
+    /// Whether the field shows `typed` at `location`, where retyping started.
+    nonisolated static func showsRetypedText(_ typed: String, at location: Int, in fullText: String) -> Bool {
+        let range = NSRange(location: location, length: typed.utf16.count)
+        let nsText = fullText as NSString
+        guard !typed.isEmpty, location >= 0, NSMaxRange(range) <= nsText.length else { return false }
+        return FocusedTextContextService.comparable(nsText.substring(with: range))
+            == FocusedTextContextService.comparable(typed)
     }
 
     /// How many characters to delete before the caret, and which typed characters to

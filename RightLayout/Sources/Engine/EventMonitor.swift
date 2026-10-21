@@ -162,6 +162,14 @@ public final class EventMonitor {
     /// After a correction made on Enter, the next Enter goes straight through.
     private var passNextEnter = false
     private let keyEventPoster = CGEventPoster()
+    /// Keystrokes typed while a correction is applied, let through once it is done.
+    private var heldUserKeys: [(event: CGEvent, proxy: CGEventTapProxy)] = []
+    private var userKeyHoldDepth = 0
+    /// When the current hold started; nil once it ran too long and keys go through again.
+    private var userKeyHoldStartedAt: Date?
+    private var userKeyHoldGeneration: UInt64 = 0
+    /// Whether the focused field's text could be read back at the last word boundary.
+    var focusedHostCanVerifyText = false
 
     private static let returnKeyCodes: Set<CGKeyCode> = [36, 76]
     /// Upper bound for holding Enter while the correction is being decided.
@@ -170,14 +178,27 @@ public final class EventMonitor {
     /// Delay before re-reading the focused text after cursor movement or other external
     /// changes. Reading it synchronously from the event tap stalls every keystroke.
     private static let deferredResyncDelay: UInt64 = 90_000_000
+    /// Re-reads of a field that is still catching up with the keystrokes.
+    private static let deferredResyncLagRetries = 3
     private static let boundaryVerificationAttempts = 12
     private static let boundaryVerificationRetryDelay: UInt64 = 5_000_000
+    /// A host that visibly lags behind the keystrokes (Slack, in a long message) is
+    /// waited for longer, up to about a quarter of a second more.
+    private static let laggingHostRetries = 10
+    private static let laggingHostRetryDelay: UInt64 = 25_000_000
+    /// Upper bound for holding the user's keystrokes while a correction is applied.
+    private static let maxUserKeyHold: TimeInterval = 1.0
+    private static let maxHeldUserKeys = 32
 
     package private(set) var lastReplacement: (deletedCount: Int, insertedText: String)?
     /// The last hotkey conversion of selected text, so converting it again toggles back.
     private var lastSelectionConversion: SelectionConversion?
     /// Held Enters that were let through (for tests; nothing is posted with `skipEventPosting`).
     package private(set) var releasedEnterCount = 0
+    /// The word being typed (for tests).
+    package var typedTokenForTesting: String { inputSession.typedToken }
+    /// The words before it (for tests).
+    package var phraseContextForTesting: String { inputSession.phraseContext }
 
     package convenience init(engine: CorrectionEngine) {
         self.init(
@@ -543,6 +564,11 @@ public final class EventMonitor {
         let flags = event.flags
         let now = timeProvider.now
 
+        if shouldHoldUserKey(now: now), let copy = event.copy() {
+            heldUserKeys.append((copy, proxy))
+            return nil
+        }
+
         // The user kept typing while an Enter was held: let it through first.
         if heldEnter != nil {
             releaseHeldEnterEarly(proxy: proxy)
@@ -608,9 +634,15 @@ public final class EventMonitor {
         if !inputSession.typedToken.isEmpty,
            let last = lastKeyTime,
            now.timeIntervalSince(last) > ThresholdsConfig.shared.timing.bufferTimeout {
-            trace.log(.bufferTimeout, fields: ["dropped": inputSession.typedToken])
-            inputSession.typedToken = ""
-            boundaryGeneration &+= 1
+            if focusedHostCanVerifyText {
+                // The word is checked against the field when it ends: a pause while
+                // typing it must not cut off its start ("ameeting" was never checked).
+                trace.log(.bufferTimeout, fields: ["kept": inputSession.typedToken])
+            } else {
+                trace.log(.bufferTimeout, fields: ["dropped": inputSession.typedToken])
+                inputSession.typedToken = ""
+                boundaryGeneration &+= 1
+            }
             keyTimings.removeAll()
         }
 
@@ -669,6 +701,55 @@ public final class EventMonitor {
         Task { await engine.resetCycling() }
 
         return Unmanaged.passUnretained(event)
+    }
+
+    // MARK: Keystrokes typed during a correction
+
+    /// Holds the user's keystrokes until `endHoldingUserKeys`. Typed while a word was
+    /// retyped, they landed between its characters, or right after it before it was read
+    /// back, which then failed and switched the layout back ("Привет, Са" + "if!").
+    func beginHoldingUserKeys() {
+        if userKeyHoldDepth == 0 {
+            userKeyHoldStartedAt = timeProvider.now
+            userKeyHoldGeneration &+= 1
+            let generation = userKeyHoldGeneration
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(Self.maxUserKeyHold * 1_000_000_000))
+                guard let self, self.userKeyHoldGeneration == generation, self.userKeyHoldDepth > 0 else { return }
+                self.stopHoldingUserKeys()
+            }
+        }
+        userKeyHoldDepth += 1
+    }
+
+    func endHoldingUserKeys() {
+        userKeyHoldDepth = max(0, userKeyHoldDepth - 1)
+        if userKeyHoldDepth == 0 {
+            stopHoldingUserKeys()
+        }
+    }
+
+    private func shouldHoldUserKey(now: Date) -> Bool {
+        guard userKeyHoldDepth > 0, let startedAt = userKeyHoldStartedAt else { return false }
+        guard now.timeIntervalSince(startedAt) <= Self.maxUserKeyHold,
+              heldUserKeys.count < Self.maxHeldUserKeys else {
+            stopHoldingUserKeys()
+            return false
+        }
+        return true
+    }
+
+    /// Lets the held keystrokes through, in order, as if they were typed now: they are
+    /// tracked like any others, and land in the layout the correction switched to.
+    private func stopHoldingUserKeys() {
+        userKeyHoldStartedAt = nil
+        let held = heldUserKeys
+        heldUserKeys.removeAll()
+        for key in held {
+            guard let passed = handleEvent(proxy: key.proxy, type: .keyDown, event: key.event),
+                  !skipEventPosting else { continue }
+            passed.takeUnretainedValue().tapPostEvent(key.proxy)
+        }
     }
 
     private func shouldHoldEnter(now: Date) -> Bool {
@@ -853,6 +934,7 @@ public final class EventMonitor {
         let canVerifyText = isSyntheticHost
             || (hostProfile.editingEnvironment == .accessibility
                 && focusedCapabilities?.capabilities.supportsFullTextRead == true)
+        focusedHostCanVerifyText = canVerifyText && !isSyntheticHost
         trace.log(
             .boundaryDetected,
             fields: [
@@ -974,6 +1056,19 @@ public final class EventMonitor {
            let pendingOriginal = planned.result.pendingOriginal ?? fallbackCascade?.original,
            let last = previousCommitted,
            last.token == pendingOriginal {
+            beginHoldingUserKeys()
+            defer { endHoldingUserKeys() }
+
+            // As for a single word: switch first, so the next keystrokes land in the new
+            // layout. Switched after the replacement, the next letter could still come in
+            // the old one ("Z tve" + "уже" became "Я ему eже").
+            let targetLanguage = planned.result.targetLanguage
+            let layoutBeforeSwitch = InputSourceManager.shared.currentLayoutId()
+            var switchedEarly = false
+            if editingEnvironment == .accessibility && canVerifyText {
+                switchedEarly = switchInputSourceIfNeeded(to: targetLanguage, transactionId: planned.result.transaction?.id)
+            }
+
             let combinedStem = pendingOriginal + last.separator + token
             guard let combinedVerification = await verifyCommittedBoundary(
                 token: combinedStem,
@@ -982,6 +1077,9 @@ public final class EventMonitor {
                 allowTrailingText: false,
                 canVerifyText: canVerifyText
             ) else {
+                if switchedEarly {
+                    revertInputSource(to: layoutBeforeSwitch)
+                }
                 if generation != boundaryGeneration || !inputSession.typedToken.isEmpty {
                     preserveCommittedBoundaryIfNeeded(token: token, separator: separator)
                     await engine.resetCycling()
@@ -1006,7 +1104,12 @@ public final class EventMonitor {
                 proxy: proxy,
                 unverifiedSuffix: combinedVerification.includesSeparator ? "" : separator
             )
-            guard let applied else { return false }
+            guard let applied else {
+                if switchedEarly {
+                    revertInputSource(to: layoutBeforeSwitch)
+                }
+                return false
+            }
 
             replaceLastPhraseBufferWord(from: pendingOriginal, to: pendingCorrection)
             updatePhraseBuffer(with: splitBufferContent(outputToken).token)
@@ -1022,14 +1125,21 @@ public final class EventMonitor {
                 lastCorrectionTime = timeProvider.now
                 backspaceReportedForId = nil
             }
-            if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile) {
-                switchInputSourceIfNeeded(to: planned.result.targetLanguage, transactionId: planned.result.transaction?.id)
+            let switchAllowed = shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile)
+            if switchedEarly {
+                if !switchAllowed {
+                    revertInputSource(to: layoutBeforeSwitch)
+                }
+            } else if switchAllowed {
+                switchInputSourceIfNeeded(to: targetLanguage, transactionId: planned.result.transaction?.id)
             }
             return true
         }
 
         switch planned.plan {
         case .autoReplace(let candidate):
+            beginHoldingUserKeys()
+            defer { endHoldingUserKeys() }
             let transaction = candidate.transaction ?? planned.result.transaction
             let targetLanguage = planned.result.targetLanguage
             let allowEventReplayFallback =
@@ -1038,6 +1148,7 @@ public final class EventMonitor {
                 hostProfile.allowsAutomaticBlindReplay &&
                 shouldAllowAutomaticReplayFallback(
                     for: token + separator,
+                    replacement: candidate.replacement,
                     confidence: planned.result.confidence,
                     hostRuntimeProfile: hostProfile
                 )
@@ -1353,7 +1464,8 @@ public final class EventMonitor {
             allowEventReplayFallback: false,
             currentVisibleText: selectedText,
             hostRuntimeProfile: hostProfile,
-            proxy: nil
+            proxy: nil,
+            syncPhraseContext: true
         )
         guard let applied else { return }
         lastSelectionConversion = SelectionConversion(original: selectedText, replacement: replacement)
@@ -1370,6 +1482,8 @@ public final class EventMonitor {
     }
 
     private func handleHotkeyPress() async {
+        beginHoldingUserKeys()
+        defer { endHoldingUserKeys() }
         let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let focusedCapabilities = textContextService.resolveFocusedElementCapabilities()
         let hostProfile = currentHostRuntimeProfile(bundleId: bundleId, capabilities: focusedCapabilities?.capabilities)
@@ -1412,6 +1526,10 @@ public final class EventMonitor {
                 hostRuntimeProfile: hostProfile
             )
             if let applied {
+                replaceLastPhraseBufferWord(
+                    from: splitBufferContent(currentVisible).token,
+                    to: splitBufferContent(newText).token
+                )
                 let manualTransaction = await buildManualTransaction(
                     original: currentVisible,
                     replacement: newText,
@@ -1442,6 +1560,10 @@ public final class EventMonitor {
                 hostRuntimeProfile: hostProfile
             )
             if let applied {
+                replaceLastPhraseBufferWord(
+                    from: splitBufferContent(original).token,
+                    to: splitBufferContent(corrected).token
+                )
                 await commitReplacementTransaction(result.transaction, editResult: applied, verifiedContext: verified?.context)
                 if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile, manual: true) {
                     switchInputSourceIfNeeded(to: result.targetLanguage, transactionId: result.transaction?.id)
@@ -1450,76 +1572,13 @@ public final class EventMonitor {
             return
         }
 
-        if !inputSession.typedToken.isEmpty,
-           var replacement = await engine.correctLastWord(inputSession.typedToken, bundleId: bundleId) {
-            var original = inputSession.typedToken
-            var verified = await verificationContext(
-                forExpectedSuffix: original,
-                preserveSessionOnUnavailable: true
-            )
-            // The start of the word may be missing from the typed buffer (it is dropped
-            // after a pause, or when the app moves its focus while showing suggestions);
-            // the field still has it. Convert the whole word, not just its end.
-            if let context = verified,
-               let wholeWord = wholeWordBeforeCaret(endingWith: original, in: context),
-               let wholeReplacement = await engine.correctLastWord(wholeWord.verifiedText, bundleId: bundleId) {
-                original = wholeWord.verifiedText
-                replacement = wholeReplacement
-                verified = wholeWord
-            }
-            guard verified != nil || canUseManualReplayFallback(for: original, hostRuntimeProfile: hostProfile) else { return }
-            let applied = await performReplacement(
-                intent: .manualCycle,
-                expectedOriginal: original,
-                replacement: replacement,
-                verifiedContext: verified,
-                allowClipboardFallback: false,
-                allowEventReplayFallback: false,
-                currentVisibleText: original,
-                hostRuntimeProfile: hostProfile,
-                proxy: nil
-            )
-            if let applied {
-                let transaction = await buildManualTransaction(
-                    original: original,
-                    replacement: replacement,
-                    intent: .manualCycle,
-                    bundleId: bundleId
-                )
-                await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified)
-                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile, manual: true) {
-                    switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: transaction?.id)
-                }
-            }
-            return
+        var outcome = await convertLastWordForHotkey(bundleId: bundleId, hostProfile: hostProfile)
+        if outcome == .reseeded {
+            // The word didn't match the field, which gave the session its word instead:
+            // convert that one now, not on a second press.
+            outcome = await convertLastWordForHotkey(bundleId: bundleId, hostProfile: hostProfile)
         }
-
-        if let last = lastCommittedToken,
-           let replacement = await engine.correctLastWord(last.token, bundleId: bundleId) {
-            let verified = await hotkeyVerification(token: last.token, separator: last.separator)
-            guard verified != nil || canUseManualReplayFallback(for: last.token + last.separator, hostRuntimeProfile: hostProfile) else { return }
-            let applied = await performHotkeyReplacement(
-                intent: .manualCycle,
-                token: last.token,
-                separator: last.separator,
-                replacement: replacement,
-                verified: verified,
-                hostRuntimeProfile: hostProfile
-            )
-            if let applied {
-                let transaction = await buildManualTransaction(
-                    original: last.token,
-                    replacement: replacement,
-                    intent: .manualCycle,
-                    bundleId: bundleId
-                )
-                await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified?.context)
-                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile, manual: true) {
-                    switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: transaction?.id)
-                }
-            }
-            return
-        }
+        guard outcome == .notApplicable else { return }
 
         guard hostProfile.allowsManualSelectionClipboardFallback,
               selectionIntentState.isActive(at: timeProvider.now) else { return }
@@ -1554,6 +1613,106 @@ public final class EventMonitor {
                 }
             }
         }
+    }
+
+    private enum HotkeyWordOutcome {
+        /// The word was handled (converted, or found not to be there).
+        case done
+        /// The word didn't match the field, and the session took the field's word.
+        case reseeded
+        /// There was no word to convert.
+        case notApplicable
+    }
+
+    /// Converts the word being typed, or else the last committed one, for the hotkey.
+    private func convertLastWordForHotkey(bundleId: String?, hostProfile: HostRuntimeProfile) async -> HotkeyWordOutcome {
+        let sessionEpoch = inputSession.sessionEpoch
+        if !inputSession.typedToken.isEmpty,
+           var replacement = await engine.correctLastWord(inputSession.typedToken, bundleId: bundleId) {
+            var original = inputSession.typedToken
+            var verified = await verificationContext(
+                forExpectedSuffix: original,
+                preserveSessionOnUnavailable: true
+            )
+            // The start of the word may be missing from the typed buffer (it is dropped
+            // after a pause, or when the app moves its focus while showing suggestions);
+            // the field still has it. Convert the whole word, not just its end.
+            if let context = verified,
+               let wholeWord = wholeWordBeforeCaret(endingWith: original, in: context),
+               let wholeReplacement = await engine.correctLastWord(wholeWord.verifiedText, bundleId: bundleId) {
+                original = wholeWord.verifiedText
+                replacement = wholeReplacement
+                verified = wholeWord
+            }
+            guard verified != nil || canUseManualReplayFallback(for: original, hostRuntimeProfile: hostProfile) else {
+                return reseededSince(sessionEpoch)
+            }
+            let applied = await performReplacement(
+                intent: .manualCycle,
+                expectedOriginal: original,
+                replacement: replacement,
+                verifiedContext: verified,
+                allowClipboardFallback: false,
+                allowEventReplayFallback: false,
+                currentVisibleText: original,
+                hostRuntimeProfile: hostProfile,
+                proxy: nil
+            )
+            if let applied {
+                let transaction = await buildManualTransaction(
+                    original: original,
+                    replacement: replacement,
+                    intent: .manualCycle,
+                    bundleId: bundleId
+                )
+                await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified)
+                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile, manual: true) {
+                    switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: transaction?.id)
+                }
+            }
+            return .done
+        }
+
+        if let last = lastCommittedToken,
+           let replacement = await engine.correctLastWord(last.token, bundleId: bundleId) {
+            let verified = await hotkeyVerification(token: last.token, separator: last.separator)
+            guard verified != nil || canUseManualReplayFallback(for: last.token + last.separator, hostRuntimeProfile: hostProfile) else {
+                return reseededSince(sessionEpoch)
+            }
+            let applied = await performHotkeyReplacement(
+                intent: .manualCycle,
+                token: last.token,
+                separator: last.separator,
+                replacement: replacement,
+                verified: verified,
+                hostRuntimeProfile: hostProfile
+            )
+            if let applied {
+                replaceLastPhraseBufferWord(
+                    from: splitBufferContent(last.token).token,
+                    to: splitBufferContent(replacement).token
+                )
+                let transaction = await buildManualTransaction(
+                    original: last.token,
+                    replacement: replacement,
+                    intent: .manualCycle,
+                    bundleId: bundleId
+                )
+                await commitReplacementTransaction(transaction, editResult: applied, verifiedContext: verified?.context)
+                if shouldSwitchLayout(after: applied, hostRuntimeProfile: hostProfile, manual: true) {
+                    switchInputSourceIfNeeded(to: await engine.currentCyclingTargetLanguage(), transactionId: transaction?.id)
+                }
+            }
+            return .done
+        }
+
+        return .notApplicable
+    }
+
+    /// Whether a failed verification since `sessionEpoch` gave the session the field's
+    /// word to convert instead.
+    private func reseededSince(_ sessionEpoch: UInt64) -> HotkeyWordOutcome {
+        inputSession.sessionEpoch != sessionEpoch && !inputSession.typedToken.isEmpty ? .reseeded : .done
     }
 
     /// Verifies `token` + `separator` before the caret for a hotkey correction.
@@ -1653,7 +1812,8 @@ public final class EventMonitor {
         hostRuntimeProfile: HostRuntimeProfile,
         proxy: CGEventTapProxy?,
         unverifiedSuffix: String = "",
-        typedTailTransform: (@Sendable (String) -> String)? = nil
+        typedTailTransform: (@Sendable (String) -> String)? = nil,
+        syncPhraseContext: Bool = false
     ) async -> TextEditResult? {
         replacementService.setSkipEventPosting(skipEventPosting)
         runtimeState = .replacing
@@ -1688,7 +1848,18 @@ public final class EventMonitor {
         // session; reading them back would only cost time or mislead.
         if hostRuntimeProfile.editingEnvironment == .accessibility,
            let snapshot = textContextService.snapshotFocusedText() {
-            applySeed(textContextService.seedSession(from: snapshot), snapshot: snapshot)
+            // A field still catching up with the retyped text would make it the start of
+            // the next word; the word being typed is then what follows its last separator.
+            let seed = FocusedTextContextService.seedSession(from: snapshot, typedTail: replacement)
+                ?? InputSessionSeed(
+                    typedToken: Self.trailingWord(of: replacement),
+                    phraseContext: "",
+                    sourceApp: snapshot.bundleId,
+                    snapshotRevision: snapshot.revision
+                )
+            // The callers add the corrected word to the phrase themselves; taking the
+            // field's phrase as well listed it twice ("Hello Hello").
+            applySeed(seed, snapshot: snapshot, keepPhraseContext: !syncPhraseContext)
         } else {
             inputSession.typedToken = ""
             inputSession.lastVerifiedSnapshot = nil
@@ -1789,7 +1960,18 @@ public final class EventMonitor {
             return syntheticVerifiedContext(for: expectedText)
         }
 
-        switch textContextService.verifyExpectedSuffix(expectedText, revision: inputSession.mutationSeq) {
+        // Wait for a host that is still catching up with the last keystrokes.
+        var result = textContextService.verifyExpectedSuffix(expectedText, revision: inputSession.mutationSeq)
+        var lagRetries = 0
+        while case .mismatch(let snapshot?, _) = result,
+              lagRetries < Self.laggingHostRetries,
+              FocusedTextContextService.lagsBehind(snapshot, typedTail: expectedText) {
+            try? await Task.sleep(nanoseconds: Self.laggingHostRetryDelay)
+            lagRetries += 1
+            result = textContextService.verifyExpectedSuffix(expectedText, revision: inputSession.mutationSeq)
+        }
+
+        switch result {
         case .verified(let context):
             trace.log(
                 .verificationResult,
@@ -1813,6 +1995,10 @@ public final class EventMonitor {
                     "selection": snapshot.map { NSStringFromRange($0.selectedRange) + "/" + String(($0.fullText as NSString).length) }
                 ]
             )
+            if let snapshot, FocusedTextContextService.lagsBehind(snapshot, typedTail: expectedText) {
+                // Still behind: what was typed is known better than what the field shows.
+                return nil
+            }
             if let snapshot, let seed {
                 applySeed(seed, snapshot: snapshot, bumpSessionEpoch: true)
             } else {
@@ -1820,7 +2006,9 @@ public final class EventMonitor {
             }
             lastCommittedToken = nil
             clearTransliterationHint()
-            Task { await engine.resetCycling() }
+            // Before anything converts the field's word: a reset arriving later would
+            // drop the conversion's alternatives.
+            await engine.resetCycling()
             return nil
         case .unavailable:
             trace.log(
@@ -1889,9 +2077,16 @@ public final class EventMonitor {
         var latestSnapshot: FocusedTextSnapshot?
         var latestSeed: InputSessionSeed?
         var lastAttemptMismatched = false
+        // The field shows the start of what was typed, but not all of it yet.
+        var fieldLagsBehind = false
 
-        attempts: for attempt in 0..<Self.boundaryVerificationAttempts {
-            if attempt > 0 {
+        attempts: for attempt in 0..<(Self.boundaryVerificationAttempts + Self.laggingHostRetries) {
+            if attempt >= Self.boundaryVerificationAttempts {
+                // Past the usual window, wait only for a host visibly catching up (Slack,
+                // in a long message, showed only the start of the word for over 100 ms).
+                guard fieldLagsBehind else { break attempts }
+                try? await Task.sleep(nanoseconds: Self.laggingHostRetryDelay)
+            } else if attempt > 0 {
                 try? await Task.sleep(nanoseconds: Self.boundaryVerificationRetryDelay)
             }
             guard generation == boundaryGeneration else { return nil }
@@ -1931,6 +2126,7 @@ public final class EventMonitor {
                 latestSnapshot = context.snapshot
                 latestSeed = textContextService.seedSession(from: context.snapshot)
                 lastAttemptMismatched = true
+                fieldLagsBehind = false
                 break attempts
             case .verified(let context):
                 trace.log(
@@ -1967,6 +2163,7 @@ public final class EventMonitor {
                     ]
                 )
                 lastAttemptMismatched = false
+                fieldLagsBehind = false
             case .mismatch(let snapshot, let seed):
                 trace.log(
                     .verificationResult,
@@ -1983,10 +2180,16 @@ public final class EventMonitor {
                 latestSnapshot = snapshot
                 latestSeed = seed
                 lastAttemptMismatched = true
+                fieldLagsBehind = snapshot.map {
+                    FocusedTextContextService.lagsBehind($0, typedTail: committedText + inputSession.typedToken)
+                } ?? false
             }
         }
 
         guard lastAttemptMismatched, generation == boundaryGeneration else { return nil }
+        // Still behind: the session knows what was typed better than the field shows it.
+        // Seeding from it made the previous word the start of the next one.
+        guard !fieldLagsBehind else { return nil }
 
         if let latestSnapshot, let latestSeed {
             applySeed(latestSeed, snapshot: latestSnapshot, bumpSessionEpoch: true)
@@ -1995,7 +2198,7 @@ public final class EventMonitor {
         }
         lastCommittedToken = nil
         clearTransliterationHint()
-        Task { await engine.resetCycling() }
+        await engine.resetCycling()
         return nil
     }
 
@@ -2039,6 +2242,7 @@ public final class EventMonitor {
 
     private func shouldAllowAutomaticReplayFallback(
         for expectedText: String,
+        replacement: String,
         confidence: Double?,
         hostRuntimeProfile: HostRuntimeProfile
     ) -> Bool {
@@ -2049,8 +2253,7 @@ public final class EventMonitor {
             return false
         }
 
-        let trimmed = expectedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let word = CorrectionDecisionPolicy.letterCore(of: trimmed, typedInWrongLayout: true),
+        guard let word = Self.blindReplayWord(original: expectedText, replacement: replacement),
               word.count >= max(1, settings.minAutoCorrectWordLength),
               word.count <= 18 else {
             return false
@@ -2065,6 +2268,23 @@ public final class EventMonitor {
         }
 
         return true
+    }
+
+    /// The word a blind retype replaces, or nil if it isn't one. Its letters are those of
+    /// the typed text, or of the replacement when keys that are punctuation on the typed
+    /// layout are letters on the other ("Yf;fk" → "Нажал").
+    nonisolated static func blindReplayWord(original: String, replacement: String) -> Substring? {
+        let trimmed = original.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let word = CorrectionDecisionPolicy.letterCore(of: trimmed, typedInWrongLayout: true) {
+            return word
+        }
+        let converted = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let word = CorrectionDecisionPolicy.letterCore(of: converted),
+              word.count == converted.count,
+              converted.count == trimmed.count else {
+            return nil
+        }
+        return word
     }
 
     private func syntheticVerifiedContext(for expectedText: String) -> VerifiedEditContext {
@@ -2158,7 +2378,7 @@ public final class EventMonitor {
 
     /// Re-reads the focused text once events have settled, unless the user has started
     /// typing in the meantime (then the locally tracked session is already correct).
-    private func scheduleDeferredResync() {
+    private func scheduleDeferredResync(lagRetry: Int = 0) {
         guard !skipEventPosting else { return }
         deferredResyncTask?.cancel()
         let expectedMutationSeq = inputSession.mutationSeq
@@ -2166,11 +2386,11 @@ public final class EventMonitor {
             try? await Task.sleep(nanoseconds: Self.deferredResyncDelay)
             guard !Task.isCancelled, let self else { return }
             self.deferredResyncTask = nil
-            self.performDeferredResync(expectedMutationSeq: expectedMutationSeq)
+            self.performDeferredResync(expectedMutationSeq: expectedMutationSeq, lagRetry: lagRetry)
         }
     }
 
-    private func performDeferredResync(expectedMutationSeq: UInt64) {
+    private func performDeferredResync(expectedMutationSeq: UInt64, lagRetry: Int) {
         guard expectedMutationSeq == inputSession.mutationSeq,
               activeSyntheticTransactions == 0,
               boundaryTasksInFlight == 0,
@@ -2178,9 +2398,29 @@ public final class EventMonitor {
               let snapshot = textContextService.snapshotFocusedText() else {
             return
         }
+        // Right after a word typed here, the field must show it and what followed. Slack
+        // can lag behind; seeding from it then made the previous word the start of the
+        // next one ("can" + "use" was checked as "canuse"). Read it again a bit later.
+        if let typedTail = locallyTypedTail() {
+            guard let seed = FocusedTextContextService.seedSession(from: snapshot, typedTail: typedTail) else {
+                if lagRetry < Self.deferredResyncLagRetries {
+                    scheduleDeferredResync(lagRetry: lagRetry + 1)
+                }
+                return
+            }
+            applySeed(seed, snapshot: snapshot)
+            return
+        }
         // Seeding bumps the mutation sequence, so the next invalidating event takes the
         // full path again and drops the seeded state.
         applySeed(textContextService.seedSession(from: snapshot), snapshot: snapshot)
+    }
+
+    /// What the user has just typed before the caret, when the session knows it: the
+    /// last committed word, its separator and the word being typed.
+    private func locallyTypedTail() -> String? {
+        guard !inputSession.isDirty, let last = lastCommittedToken else { return nil }
+        return last.token + last.separator + inputSession.typedToken
     }
 
     private func matchesAutoReplace(_ plan: CorrectionPlan) -> Bool {
@@ -2256,6 +2496,7 @@ public final class EventMonitor {
         _ seed: InputSessionSeed,
         snapshot: FocusedTextSnapshot,
         clearPhraseContext: Bool = false,
+        keepPhraseContext: Bool = false,
         bumpSessionEpoch: Bool = false
     ) {
         if bumpSessionEpoch {
@@ -2264,7 +2505,11 @@ public final class EventMonitor {
         inputSession.mutationSeq &+= 1
         boundaryGeneration &+= 1
         inputSession.typedToken = seed.typedToken
-        inputSession.phraseContext = clearPhraseContext ? "" : seed.phraseContext
+        if clearPhraseContext {
+            inputSession.phraseContext = ""
+        } else if !keepPhraseContext {
+            inputSession.phraseContext = seed.phraseContext
+        }
         inputSession.sourceApp = seed.sourceApp ?? ""
         inputSession.lastVerifiedSnapshot = snapshot
         inputSession.isDirty = false
@@ -2294,6 +2539,14 @@ public final class EventMonitor {
         manualTriggerState.isPressed = false
         manualTriggerState.isStandaloneCandidate = false
         manualTriggerState.lastStandaloneReleaseAt = nil
+    }
+
+    /// The word `text` ends with: what follows its last whitespace.
+    nonisolated static func trailingWord(of text: String) -> String {
+        guard let lastSpace = text.lastIndex(where: { $0.isWhitespace || $0.isNewline }) else {
+            return text
+        }
+        return String(text[text.index(after: lastSpace)...])
     }
 
     package func splitBufferContent(_ content: String) -> (leading: String, token: String, trailing: String) {

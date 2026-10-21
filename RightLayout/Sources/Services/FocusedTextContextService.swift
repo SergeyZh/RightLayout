@@ -31,6 +31,27 @@ package struct FocusedTextSnapshot: @unchecked Sendable {
     package let revision: UInt64
 }
 
+extension FocusedTextSnapshot {
+    /// The same snapshot with the caret at `location`.
+    package func withCaret(at location: Int) -> FocusedTextSnapshot {
+        FocusedTextSnapshot(
+            element: element,
+            bundleId: bundleId,
+            pid: pid,
+            fullText: fullText,
+            selectedRange: NSRange(location: location, length: 0),
+            selectedText: "",
+            caretLocation: location,
+            supportsAXSelectedTextWrite: supportsAXSelectedTextWrite,
+            supportsAXValueWrite: supportsAXValueWrite,
+            supportsAXRangeWrite: supportsAXRangeWrite,
+            capabilities: capabilities,
+            source: source,
+            revision: revision
+        )
+    }
+}
+
 package struct VerifiedEditContext: @unchecked Sendable {
     package let snapshot: FocusedTextSnapshot
     package let verifiedRange: NSRange
@@ -178,38 +199,48 @@ package final class FocusedTextContextService {
     package func verifyCommittedBoundary(token: String, separator: String, revision: UInt64) -> SessionSyncResult {
         guard !token.isEmpty else { return .unavailable }
         guard let snapshot = snapshotFocusedText() else { return .unavailable }
-        guard snapshot.selectedRange.length == 0 else {
-            return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
-        }
+        return Self.verifyCommittedBoundary(token: token, separator: separator, in: snapshot)
+    }
 
-        let beforeCaret = Self.comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
-        let committedText = Self.comparable(token + separator)
+    nonisolated package static func verifyCommittedBoundary(
+        token: String,
+        separator: String,
+        in snapshot: FocusedTextSnapshot
+    ) -> SessionSyncResult {
+        verifyAllowingCaretLag(snapshot, typedTails: [token + separator, token]) { snapshot in
+            guard snapshot.selectedRange.length == 0 else {
+                return .mismatch(snapshot: snapshot, seed: sessionSeed(from: snapshot))
+            }
 
-        if beforeCaret.hasSuffix(committedText) {
-            let location = beforeCaret.utf16.count - committedText.utf16.count
-            let range = NSRange(location: location, length: committedText.utf16.count)
-            return .verified(
-                VerifiedEditContext(
-                    snapshot: snapshot,
-                    verifiedRange: range,
-                    verifiedText: committedText
+            let beforeCaret = comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
+            let committedText = comparable(token + separator)
+
+            if beforeCaret.hasSuffix(committedText) {
+                let location = beforeCaret.utf16.count - committedText.utf16.count
+                let range = NSRange(location: location, length: committedText.utf16.count)
+                return .verified(
+                    VerifiedEditContext(
+                        snapshot: snapshot,
+                        verifiedRange: range,
+                        verifiedText: committedText
+                    )
                 )
-            )
-        }
+            }
 
-        if beforeCaret.hasSuffix(Self.comparable(token)) {
-            let location = beforeCaret.utf16.count - token.utf16.count
-            let range = NSRange(location: location, length: token.utf16.count)
-            return .verified(
-                VerifiedEditContext(
-                    snapshot: snapshot,
-                    verifiedRange: range,
-                    verifiedText: token
+            if beforeCaret.hasSuffix(comparable(token)) {
+                let location = beforeCaret.utf16.count - token.utf16.count
+                let range = NSRange(location: location, length: token.utf16.count)
+                return .verified(
+                    VerifiedEditContext(
+                        snapshot: snapshot,
+                        verifiedRange: range,
+                        verifiedText: token
+                    )
                 )
-            )
-        }
+            }
 
-        return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
+            return .mismatch(snapshot: snapshot, seed: sessionSeed(from: snapshot))
+        }
     }
 
     /// Verifies a committed boundary (`token` + `separator`) followed by
@@ -229,62 +260,105 @@ package final class FocusedTextContextService {
         }
         guard !token.isEmpty else { return .unavailable }
         guard let snapshot = snapshotFocusedText() else { return .unavailable }
-        guard snapshot.selectedRange.length == 0 else {
-            return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
-        }
-
-        let beforeCaret = Self.comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
-        var trailingStart = beforeCaret.endIndex
-        for _ in 0..<trailingCharacterCount {
-            guard trailingStart > beforeCaret.startIndex else {
-                return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
-            }
-            trailingStart = beforeCaret.index(before: trailingStart)
-        }
-
-        let committedText = Self.comparable(token + separator)
-        let trailingText = beforeCaret[trailingStart...]
-        guard beforeCaret[..<trailingStart].hasSuffix(committedText),
-              !trailingText.contains(where: { $0.isWhitespace || $0.isNewline }) else {
-            return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
-        }
-
-        let verifiedText = committedText + String(trailingText)
-        let location = beforeCaret.utf16.count - verifiedText.utf16.count
-        let range = NSRange(location: location, length: verifiedText.utf16.count)
-        return .verified(
-            VerifiedEditContext(
-                snapshot: snapshot,
-                verifiedRange: range,
-                verifiedText: verifiedText
-            )
+        return Self.verifyCommittedBoundary(
+            token: token,
+            separator: separator,
+            trailingCharacterCount: trailingCharacterCount,
+            in: snapshot
         )
+    }
+
+    nonisolated package static func verifyCommittedBoundary(
+        token: String,
+        separator: String,
+        trailingCharacterCount: Int,
+        in snapshot: FocusedTextSnapshot
+    ) -> SessionSyncResult {
+        guard trailingCharacterCount > 0 else {
+            return verifyCommittedBoundary(token: token, separator: separator, in: snapshot)
+        }
+        let committedText = comparable(token + separator)
+
+        // The trailing characters as the field shows them at its end, if the caret lags
+        // behind them.
+        var typedTails: [String] = []
+        let fullText = comparable(snapshot.fullText)
+        if fullText.count >= trailingCharacterCount {
+            let tailStart = fullText.index(fullText.endIndex, offsetBy: -trailingCharacterCount)
+            typedTails.append(committedText + fullText[tailStart...])
+        }
+
+        return verifyAllowingCaretLag(snapshot, typedTails: typedTails) { snapshot in
+            guard snapshot.selectedRange.length == 0 else {
+                return .mismatch(snapshot: snapshot, seed: sessionSeed(from: snapshot))
+            }
+
+            let beforeCaret = comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
+            var trailingStart = beforeCaret.endIndex
+            for _ in 0..<trailingCharacterCount {
+                guard trailingStart > beforeCaret.startIndex else {
+                    return .mismatch(snapshot: snapshot, seed: sessionSeed(from: snapshot))
+                }
+                trailingStart = beforeCaret.index(before: trailingStart)
+            }
+
+            let trailingText = beforeCaret[trailingStart...]
+            guard beforeCaret[..<trailingStart].hasSuffix(committedText),
+                  !trailingText.contains(where: { $0.isWhitespace || $0.isNewline }) else {
+                return .mismatch(snapshot: snapshot, seed: sessionSeed(from: snapshot))
+            }
+
+            let verifiedText = committedText + String(trailingText)
+            let location = beforeCaret.utf16.count - verifiedText.utf16.count
+            let range = NSRange(location: location, length: verifiedText.utf16.count)
+            return .verified(
+                VerifiedEditContext(
+                    snapshot: snapshot,
+                    verifiedRange: range,
+                    verifiedText: verifiedText
+                )
+            )
+        }
     }
 
     package func verifyExpectedSuffix(_ expectedText: String, revision: UInt64) -> SessionSyncResult {
         guard !expectedText.isEmpty else { return .unavailable }
         guard let snapshot = snapshotFocusedText() else { return .unavailable }
-        guard snapshot.selectedRange.length == 0 else {
-            return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
-        }
+        return Self.verifyExpectedSuffix(expectedText, in: snapshot)
+    }
 
-        let beforeCaret = Self.comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
-        guard beforeCaret.hasSuffix(Self.comparable(expectedText)) else {
-            return .mismatch(snapshot: snapshot, seed: seedSession(from: snapshot))
-        }
+    nonisolated package static func verifyExpectedSuffix(
+        _ expectedText: String,
+        in snapshot: FocusedTextSnapshot
+    ) -> SessionSyncResult {
+        guard !expectedText.isEmpty else { return .unavailable }
+        return verifyAllowingCaretLag(snapshot, typedTails: [expectedText]) { snapshot in
+            guard snapshot.selectedRange.length == 0 else {
+                return .mismatch(snapshot: snapshot, seed: sessionSeed(from: snapshot))
+            }
 
-        let location = beforeCaret.utf16.count - expectedText.utf16.count
-        let range = NSRange(location: location, length: expectedText.utf16.count)
-        return .verified(
-            VerifiedEditContext(
-                snapshot: snapshot,
-                verifiedRange: range,
-                verifiedText: expectedText
+            let beforeCaret = comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
+            guard beforeCaret.hasSuffix(comparable(expectedText)) else {
+                return .mismatch(snapshot: snapshot, seed: sessionSeed(from: snapshot))
+            }
+
+            let location = beforeCaret.utf16.count - expectedText.utf16.count
+            let range = NSRange(location: location, length: expectedText.utf16.count)
+            return .verified(
+                VerifiedEditContext(
+                    snapshot: snapshot,
+                    verifiedRange: range,
+                    verifiedText: expectedText
+                )
             )
-        )
+        }
     }
 
     package func seedSession(from snapshot: FocusedTextSnapshot) -> InputSessionSeed {
+        Self.sessionSeed(from: snapshot)
+    }
+
+    nonisolated package static func sessionSeed(from snapshot: FocusedTextSnapshot) -> InputSessionSeed {
         let beforeCaret = prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location)
         let typedToken: String
         if snapshot.selectedRange.length == 0 {
@@ -300,6 +374,95 @@ package final class FocusedTextContextService {
             sourceApp: snapshot.bundleId,
             snapshotRevision: snapshot.revision
         )
+    }
+
+    /// Seeds the session from `snapshot` when, as far as the session knows, the user has
+    /// just typed `typedTail` before the caret. Returns nil while the field is still
+    /// behind those keystrokes: seeding from it made the previous word the start of the
+    /// next one in Slack ("can" + "use" was read as "canuse").
+    nonisolated package static func seedSession(
+        from snapshot: FocusedTextSnapshot,
+        typedTail: String
+    ) -> InputSessionSeed? {
+        let current = laggingCaretLocation(
+            fullText: snapshot.fullText,
+            selection: snapshot.selectedRange,
+            typedTail: typedTail
+        ).map { snapshot.withCaret(at: $0) } ?? snapshot
+        if lagsBehind(current, typedTail: typedTail) {
+            return nil
+        }
+        return sessionSeed(from: current)
+    }
+
+    // MARK: Hosts lagging behind the keystrokes
+
+    /// How far behind its text a host may report the caret right after typing.
+    nonisolated package static let maxCaretLag = 3
+
+    /// How many of the last typed characters a host may not show yet.
+    nonisolated package static let maxTextLag = 4
+
+    /// Slack (Chromium) can report the caret a character or two behind the text it
+    /// shows, for seconds in a long message ("Скуысуте|Ж"). When the field ends with
+    /// `typedTail`, text the user has just typed there, and the caret is inside it, the
+    /// caret is really at the end of the text: returns that location.
+    nonisolated package static func laggingCaretLocation(
+        fullText: String,
+        selection: NSRange,
+        typedTail: String
+    ) -> Int? {
+        let length = (fullText as NSString).length
+        let tailLength = typedTail.utf16.count
+        guard selection.length == 0,
+              tailLength > 0,
+              selection.location < length,
+              length - selection.location <= maxCaretLag,
+              selection.location >= length - tailLength,
+              comparable(fullText).hasSuffix(comparable(typedTail)) else {
+            return nil
+        }
+        return length
+    }
+
+    /// Whether the text before the caret stops partway through `typedTail`, the text the
+    /// user has just typed there: the host hasn't caught up with the last keystrokes yet
+    /// ("…can" right after "can " was typed).
+    nonisolated package static func lagsBehind(_ snapshot: FocusedTextSnapshot, typedTail: String) -> Bool {
+        guard snapshot.selectedRange.length == 0 else { return false }
+        let beforeCaret = comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
+        let tail = Array(comparable(typedTail))
+        guard tail.count > 1, !beforeCaret.hasSuffix(String(tail)) else { return false }
+        // One shared letter is no evidence, unless the tail is a letter and a separator.
+        let shortest = max(min(2, tail.count - 1), tail.count - maxTextLag)
+        for length in stride(from: tail.count - 1, through: shortest, by: -1) {
+            if beforeCaret.hasSuffix(String(tail[..<length])) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Runs `check`; if it fails and the caret lags behind one of `typedTails` at the end
+    /// of the text, runs it again with the caret at the end.
+    nonisolated private static func verifyAllowingCaretLag(
+        _ snapshot: FocusedTextSnapshot,
+        typedTails: [String],
+        _ check: (FocusedTextSnapshot) -> SessionSyncResult
+    ) -> SessionSyncResult {
+        let result = check(snapshot)
+        guard case .mismatch = result else { return result }
+        for tail in typedTails {
+            guard let caret = laggingCaretLocation(
+                fullText: snapshot.fullText,
+                selection: snapshot.selectedRange,
+                typedTail: tail
+            ) else { continue }
+            if case .verified(let context) = check(snapshot.withCaret(at: caret)) {
+                return .verified(context)
+            }
+        }
+        return result
     }
 
     private func focusedElement() -> AXUIElement? {
@@ -389,7 +552,7 @@ package final class FocusedTextContextService {
         text.replacingOccurrences(of: "\u{00A0}", with: " ")
     }
 
-    private func prefix(in text: String, utf16Length: Int) -> String {
+    nonisolated private static func prefix(in text: String, utf16Length: Int) -> String {
         let nsText = text as NSString
         guard utf16Length >= 0, utf16Length <= nsText.length else {
             return text
@@ -403,7 +566,7 @@ package final class FocusedTextContextService {
         return nsText.substring(with: range)
     }
 
-    private func trailingToken(in text: String) -> String {
+    nonisolated private static func trailingToken(in text: String) -> String {
         let scalars = Array(text)
         guard !scalars.isEmpty else { return "" }
 
@@ -419,7 +582,7 @@ package final class FocusedTextContextService {
         return String(scalars[start..<scalars.endIndex])
     }
 
-    private func trailingPhraseContext(in text: String) -> String {
+    nonisolated private static func trailingPhraseContext(in text: String) -> String {
         let suffix = String(text.suffix(100))
         let words = suffix.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).suffix(5)
         return words.joined(separator: " ")

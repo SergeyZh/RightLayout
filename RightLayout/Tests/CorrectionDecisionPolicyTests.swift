@@ -142,4 +142,72 @@ final class CorrectionDecisionPolicyTests: XCTestCase {
 
         XCTAssertEqual(disposition, .hint)
     }
+
+    /// A "." typed after a Slack mention was held for the hotkey as "ю".
+    func testLonePunctuationIsNotAWordTypedInTheWrongLayout() {
+        for (original, converted) in [(".", "ю"), (",", "б"), (";", "ж")] {
+            let evidence = makeEvidence(
+                original: original,
+                converted: converted,
+                confidence: 0.95,
+                margin: 0.95,
+                tokenKind: .punctuated
+            )
+            for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+                let disposition = CorrectionDecisionPolicy.evaluate(
+                    evidence: evidence,
+                    environment: environment,
+                    preset: .aggressive
+                )
+                XCTAssertEqual(disposition, .reject, original)
+            }
+        }
+    }
+
+    /// "Yf;fk" ("Нажал") and "Drk.xbk" ("Включил") were only held for the hotkey in the
+    /// Claude app, whose text can't be read back.
+    func testWordWithLetterKeysThatArePunctuationAutoAppliesWithoutAccessibility() {
+        for (original, converted) in [("Yf;fk", "Нажал"), ("Drk.xbk", "Включил"), ("[jhjij", "хорошо")] {
+            let evidence = makeEvidence(
+                original: original,
+                converted: converted,
+                confidence: 0.95,
+                margin: 0.95,
+                tokenKind: .punctuated
+            )
+            for preset in [SettingsManager.BehaviorPreset.balanced, .aggressive] {
+                let disposition = CorrectionDecisionPolicy.evaluate(
+                    evidence: evidence,
+                    environment: .nonAccessibility,
+                    preset: preset
+                )
+                XCTAssertEqual(disposition, .autoApply, "\(original) (\(preset))")
+            }
+        }
+    }
+
+    func testPunctuatedTokenThatIsNotAWordStaysManualWithoutAccessibility() {
+        let shortWord = makeEvidence(original: "j,", converted: "об", confidence: 0.95, margin: 0.95, tokenKind: .punctuated)
+        XCTAssertNotEqual(
+            CorrectionDecisionPolicy.evaluate(evidence: shortWord, environment: .nonAccessibility, preset: .aggressive),
+            .autoApply
+        )
+        let notAWord = makeEvidence(original: "Ж-)", converted: ":-)", confidence: 0.95, margin: 0.95, tokenKind: .punctuated)
+        XCTAssertNotEqual(
+            CorrectionDecisionPolicy.evaluate(evidence: notAWord, environment: .nonAccessibility, preset: .aggressive),
+            .autoApply
+        )
+        let unsure = makeEvidence(original: "Yf;fk", converted: "Нажал", confidence: 0.80, margin: 0.95, tokenKind: .punctuated)
+        XCTAssertNotEqual(
+            CorrectionDecisionPolicy.evaluate(evidence: unsure, environment: .nonAccessibility, preset: .balanced),
+            .autoApply
+        )
+    }
+
+    func testBlindRetypeTakesTheLettersOfTheConvertedWord() {
+        XCTAssertEqual(EventMonitor.blindReplayWord(original: "Yf;fk ", replacement: "Нажал").map(String.init), "Нажал")
+        XCTAssertEqual(EventMonitor.blindReplayWord(original: "ghbdtn ", replacement: "привет").map(String.init), "ghbdtn")
+        XCTAssertEqual(EventMonitor.blindReplayWord(original: "Lf/ ", replacement: "Да.").map(String.init), "Lf")
+        XCTAssertNil(EventMonitor.blindReplayWord(original: "Ж-) ", replacement: ":-)"))
+    }
 }

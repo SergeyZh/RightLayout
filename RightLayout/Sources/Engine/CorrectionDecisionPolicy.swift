@@ -185,6 +185,11 @@ package enum CorrectionDecisionPolicy {
         }
 
         let letterCount = evidence.original.filter(\.isLetter).count
+        // A lone punctuation mark (a "." after a word or a mention) is not a word typed
+        // in the wrong layout, though its key is a letter in the other one ("." is "ю").
+        if evidence.original.count == 1, !evidence.original.contains(where: { $0.isLetter || $0.isNumber }) {
+            return .reject
+        }
         if letterCount < minimumLetters {
             return .manualOnly
         }
@@ -193,12 +198,29 @@ package enum CorrectionDecisionPolicy {
         case .technical, .mixed:
             return .reject
         case .punctuated:
-            if environment == .accessibility,
-               letterCount >= 2,
-               evidence.convertedText.allSatisfy({ $0.isLetter || $0.isWhitespace || $0 == "«" || $0 == "»" || $0 == "\"" || $0 == "'" }),
-               evidence.confidence >= thresholds.axAuto,
-               evidence.winnerMargin >= thresholds.axMargin {
-                return .autoApply
+            // Keys that are punctuation on one layout and letters on the other: a
+            // Russian word with "ж", "х", "э", "б" or "ю" typed on the English layout
+            // ("Yf;fk" is "Нажал").
+            let convertsToWord = letterCount >= 2
+                && evidence.convertedText.allSatisfy({ $0.isLetter || $0.isWhitespace || $0 == "«" || $0 == "»" || $0 == "\"" || $0 == "'" })
+            switch environment {
+            case .accessibility:
+                if convertsToWord,
+                   evidence.confidence >= thresholds.axAuto,
+                   evidence.winnerMargin >= thresholds.axMargin {
+                    return .autoApply
+                }
+            case .nonAccessibility:
+                // Decided like a plain word: such words were never corrected in apps
+                // whose text can't be read back (Claude, Electron apps).
+                if convertsToWord,
+                   letterCount <= 18,
+                   evidence.confidence >= thresholds.nonAXAuto,
+                   evidence.winnerMargin >= thresholds.nonAXMargin {
+                    return .autoApply
+                }
+            case .secureReadBlind:
+                break
             }
             return evaluateAmbiguous(
                 confidence: evidence.confidence,
