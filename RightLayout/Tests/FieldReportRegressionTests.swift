@@ -99,6 +99,8 @@ final class FieldReportRegressionTests: XCTestCase {
     // MARK: "Yf;fk" was only converted by the hotkey in the Claude app
 
     func testWordWithPunctuationKeysIsCorrectedWhereTextCannotBeReadBack() async {
+        // The reporter works in English and Russian.
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
         for (typed, expected) in [("Yf;fk", "Нажал"), ("Drk.xbk", "Включил")] {
             let planned = await engine.planCorrection(typed, editingEnvironment: .nonAccessibility)
             guard case .autoReplace(let candidate) = planned.plan else {
@@ -107,6 +109,19 @@ final class FieldReportRegressionTests: XCTestCase {
             }
             XCTAssertEqual(candidate.replacement, expected)
             XCTAssertEqual(planned.result.targetLanguage, .russian)
+        }
+    }
+
+    func testWordWithPunctuationKeysIsNeverConvertedInPieces() async {
+        // With Hebrew on too, "Yf;fk" was split at ";" and its end converted alone:
+        // "Yf;כל".
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            for (typed, expected) in [("Yf;fk", "Нажал"), ("Drk.xbk", "Включил")] {
+                let planned = await engine.planCorrection(typed, editingEnvironment: environment)
+                if case .autoReplace(let candidate) = planned.plan {
+                    XCTAssertEqual(candidate.replacement, expected, "\(typed) (\(environment))")
+                }
+            }
         }
     }
 

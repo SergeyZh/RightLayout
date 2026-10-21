@@ -135,7 +135,17 @@ extension CorrectionEngine {
         // A short word whose only punctuation sits at its edges ("Lf/" → "Да.") is
         // decided like the bare word: its converted text is final.
         let isShortWithEdgePunctuation = evidence.tokenKind == .short && text.contains(where: { !$0.isLetter })
-        let usesFastLane = evidence.tokenKind == .plain || evidence.isWhitelistedShort || isShortWithEdgePunctuation
+        // A word whose punctuation keys are letters on the other layout ("Yf;fk" is
+        // "Нажал") is converted whole: split at those keys, its pieces were converted on
+        // their own ("Yf;כל").
+        let isWordTypedWithPunctuationKeys = evidence.tokenKind == .punctuated
+            && evidence.isCorrection
+            && evidence.convertedText.allSatisfy(\.isLetter)
+            && (WordFrequencyModel.shared(evidence.targetLanguage.rawValue)?.contains(evidence.convertedText) ?? false)
+        let usesFastLane = evidence.tokenKind == .plain
+            || evidence.isWhitelistedShort
+            || isShortWithEdgePunctuation
+            || isWordTypedWithPunctuationKeys
         var riskPolicy = riskPolicy(for: baseDisposition)
         if await settings.isLearningEnabled {
             riskPolicy = await personalizationEngine.demote(
@@ -147,6 +157,15 @@ extension CorrectionEngine {
 
         if text.filter(\.isLetter).count < max(1, limits.minimumWordLength) {
             riskPolicy = moreConservativeRiskPolicy(riskPolicy, .holdForHotkey)
+        }
+
+        // Where the text can't be read back, a punctuated token is only replaced
+        // automatically when it is a known word as a whole; anything else would be split
+        // at its punctuation and retyped blind.
+        if editingEnvironment == .nonAccessibility,
+           evidence.tokenKind == .punctuated,
+           !isWordTypedWithPunctuationKeys {
+            riskPolicy = moreConservativeRiskPolicy(riskPolicy, .suggestHint)
         }
 
         if evidence.tokenKind == .short,
