@@ -96,6 +96,22 @@ final class FieldReportRegressionTests: XCTestCase {
         XCTAssertNil(WrongLayoutShorthand.match("n/r/", enabledLanguages: [.english, .hebrew], activeLayouts: layouts))
     }
 
+    // MARK: A "." after a Slack mention was held for the hotkey as "ю"
+
+    func testLonePeriodIsLeftAlone() async {
+        for token in [".", ","] {
+            let planned = await engine.planCorrection(token)
+            switch planned.plan {
+            case .none:
+                break
+            default:
+                XCTFail("\"\(token)\" must be left alone, got \(planned.plan)")
+            }
+        }
+        let suggestion = await engine.applyPendingSuggestion()
+        XCTAssertNil(suggestion, "Nothing may be waiting for the hotkey")
+    }
+
     // MARK: "На всякийс лучай" became "На всякийc kexfq"
 
     func testTextStartingInsideAWordIsNotAWholeWord() {

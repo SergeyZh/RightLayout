@@ -142,4 +142,25 @@ final class CorrectionDecisionPolicyTests: XCTestCase {
 
         XCTAssertEqual(disposition, .hint)
     }
+
+    /// A "." typed after a Slack mention was held for the hotkey as "ю".
+    func testLonePunctuationIsNotAWordTypedInTheWrongLayout() {
+        for (original, converted) in [(".", "ю"), (",", "б"), (";", "ж")] {
+            let evidence = makeEvidence(
+                original: original,
+                converted: converted,
+                confidence: 0.95,
+                margin: 0.95,
+                tokenKind: .punctuated
+            )
+            for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+                let disposition = CorrectionDecisionPolicy.evaluate(
+                    evidence: evidence,
+                    environment: environment,
+                    preset: .aggressive
+                )
+                XCTAssertEqual(disposition, .reject, original)
+            }
+        }
+    }
 }

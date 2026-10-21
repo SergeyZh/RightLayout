@@ -185,6 +185,11 @@ package enum CorrectionDecisionPolicy {
         }
 
         let letterCount = evidence.original.filter(\.isLetter).count
+        // A lone punctuation mark (a "." after a word or a mention) is not a word typed
+        // in the wrong layout, though its key is a letter in the other one ("." is "ю").
+        if evidence.original.count == 1, !evidence.original.contains(where: { $0.isLetter || $0.isNumber }) {
+            return .reject
+        }
         if letterCount < minimumLetters {
             return .manualOnly
         }
