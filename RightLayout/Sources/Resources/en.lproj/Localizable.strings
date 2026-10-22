@@ -454,3 +454,32 @@
 "Copy problem report" = "Copy problem report";
 "Report copied" = "Report copied";
 "Keeps the last minutes of what RightLayout saw and did, including the words you type, in memory only. When something goes wrong, copy the report and send it with a short note." = "Keeps the last minutes of what RightLayout saw and did, including the words you type, in memory only. When something goes wrong, copy the report and send it with a short note.";
+
+/* Adaptation data */
+"Demoting contexts" = "Demoting contexts";
+"Learned data files" = "Learned data files";
+"Everything adaptation keeps is stored locally in these files." = "Everything adaptation keeps is stored locally in these files.";
+"Show in Finder" = "Show in Finder";
+"Deletes everything adaptation has learned: kept and undone corrections, layout preferences and sentence patterns. Manual rules remain separate below." = "Deletes everything adaptation has learned: kept and undone corrections, layout preferences and sentence patterns. Manual rules remain separate below.";
+"What adaptation has learned" = "What adaptation has learned";
+"Read from the stored data. Learning only makes corrections more cautious: where they were often undone, they become suggestions, and then hotkey-only." = "Read from the stored data. Learning only makes corrections more cautious: where they were often undone, they become suggestions, and then hotkey-only.";
+"Refresh" = "Refresh";
+"Nothing learned yet." = "Nothing learned yet.";
+"Corrections kept and undone" = "Corrections kept and undone";
+"By app, kind of text and time of day. A context starts trusted; corrections undone there make it cautious." = "By app, kind of text and time of day. A context starts trusted; corrections undone there make it cautious.";
+"Layout scores by app" = "Layout scores by app";
+"Raised when a correction to a layout is kept, lowered when it is undone. At −3 or below, corrections to that layout become suggestions in that app." = "Raised when a correction to a layout is kept, lowered when it is undone. At −3 or below, corrections to that layout become suggestions in that app.";
+"Sentence patterns by app" = "Sentence patterns by app";
+"Which language usually follows which in a sentence. A pattern seen often makes the next word's language more certain." = "Which language usually follows which in a sentence. A pattern seen often makes the next word's language more certain.";
+"kept %@ · undone %@" = "kept %@ · undone %@";
+"text" = "text";
+"code" = "code";
+"links and commands" = "links and commands";
+"night (0–6)" = "night (0–6)";
+"day (7–18)" = "day (7–18)";
+"evening (19–23)" = "evening (19–23)";
+"last change %@" = "last change %@";
+"Corrections become hotkey-only" = "Corrections become hotkey-only";
+"Corrections become suggestions" = "Corrections become suggestions";
+"No effect" = "No effect";
+"%d patterns" = "%d patterns";

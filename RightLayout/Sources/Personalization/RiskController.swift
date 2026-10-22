@@ -71,7 +71,7 @@ actor RiskController {
         if candidateConfidence < 0.5 { return .reject }
 
         let state = states[contextKey] ?? RiskState()
-        let lowerBound = calculateLowerBound(state)
+        let lowerBound = Self.calculateLowerBound(state)
 
         if candidateConfidence >= 0.90 {
             return .autoApply
@@ -104,7 +104,12 @@ actor RiskController {
         if let forcedPolicy { return forcedPolicy }
         if isManual || testMode { return policy }
 
-        let state = states[contextKey] ?? RiskState()
+        return Self.demote(policy: policy, state: states[contextKey] ?? RiskState())
+    }
+
+    /// What `state` makes of `policy`: a context where corrections were often undone
+    /// gets suggestions instead of corrections, and then only the hotkey.
+    static func demote(policy: RiskPolicy, state: RiskState) -> RiskPolicy {
         let lowerBound = calculateLowerBound(state)
 
         switch policy {
@@ -138,7 +143,18 @@ actor RiskController {
         await save()
     }
 
-    private func calculateLowerBound(_ state: RiskState) -> Double {
+    /// Everything learned so far, for the Adaptation page.
+    func allStates() -> [ContextKey: RiskState] {
+        states
+    }
+
+    /// Forgets everything learned.
+    func reset() async {
+        states.removeAll()
+        await save()
+    }
+
+    private static func calculateLowerBound(_ state: RiskState) -> Double {
         let uncertainty = 1.0 / sqrt(state.totalEvidence + 1.0)
         return state.mean - uncertainty
     }

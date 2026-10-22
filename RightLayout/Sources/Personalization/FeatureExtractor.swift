@@ -85,6 +85,21 @@ actor FeatureExtractor {
     
     // MARK: - Extraction Logic
     
+    /// The hashes an app's learned data is stored under, so the Adaptation page can tell
+    /// which app (and time of day, and kind of text) a piece of it belongs to.
+    func contextHashes(forBundleId bundleId: String) -> AppContextHashes {
+        AppContextHashes(
+            bundleId: bundleId,
+            app: hashToInt(bundleId, salt: salt),
+            intents: Dictionary(uniqueKeysWithValues: ["prose", "code", "url"].map {
+                ($0, hashToInt("\(bundleId):\($0)", salt: salt))
+            }),
+            timeBuckets: Dictionary(uniqueKeysWithValues: (0...2).map {
+                ($0, hashToInt("\(bundleId):\($0)", salt: salt))
+            })
+        )
+    }
+
     /// Returns hierarchical context hashes
     private func extractHierarchicalContext(appBundleId: String, intent: String) -> (appHash: Int, key: ContextKey, hour: Int, isWeekend: Bool) {
         let appHash = hashToInt(appBundleId, salt: salt)
@@ -261,4 +276,14 @@ private extension Character {
     var isHebrew: Bool {
         return ("\u{0590}"..."\u{05FF}").contains(self)
     }
+}
+
+/// The hashes one app's learned data is stored under (see `ContextKey`).
+struct AppContextHashes: Sendable {
+    let bundleId: String
+    let app: Int
+    /// By kind of text: "prose", "code", "url".
+    let intents: [String: Int]
+    /// By time of day: 0 night (0–6), 1 day (7–18), 2 evening (19–23).
+    let timeBuckets: [Int: Int]
 }

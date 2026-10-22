@@ -331,3 +331,32 @@
 "Copy problem report" = "העתק דוח בעיה";
 "Report copied" = "הדוח הועתק";
 "Keeps the last minutes of what RightLayout saw and did, including the words you type, in memory only. When something goes wrong, copy the report and send it with a short note." = "שומר בזיכרון בלבד את הדקות האחרונות של מה ש-RightLayout ראה ועשה, כולל המילים שאתה מקליד. כשמשהו משתבש, העתק את הדוח ושלח אותו עם הערה קצרה.";
+
+/* Adaptation data */
+"Demoting contexts" = "הקשרים מגבילים";
+"Learned data files" = "קובצי נתוני הלמידה";
+"Everything adaptation keeps is stored locally in these files." = "כל מה שההסתגלות שומרת נשמר מקומית בקבצים אלה.";
+"Show in Finder" = "הצג ב-Finder";
+"Deletes everything adaptation has learned: kept and undone corrections, layout preferences and sentence patterns. Manual rules remain separate below." = "מוחק את כל מה שההסתגלות למדה: תיקונים שנשמרו ובוטלו, ציוני פריסות ודפוסי משפטים. הכללים הידניים למטה נשארים.";
+"What adaptation has learned" = "מה ההסתגלות למדה";
+"Read from the stored data. Learning only makes corrections more cautious: where they were often undone, they become suggestions, and then hotkey-only." = "נקרא מהנתונים השמורים. הלמידה רק הופכת תיקונים לזהירים יותר: היכן שבוטלו לעיתים קרובות, הם הופכים להצעות, ואחר כך לקיצור מקשים בלבד.";
+"Refresh" = "רענן";
+"Nothing learned yet." = "עדיין לא נלמד דבר.";
+"Corrections kept and undone" = "תיקונים שנשמרו ובוטלו";
+"By app, kind of text and time of day. A context starts trusted; corrections undone there make it cautious." = "לפי יישום, סוג טקסט ושעה ביום. הקשר מתחיל כמהימן; תיקונים שבוטלו בו הופכים אותו לזהיר.";
+"Layout scores by app" = "ציוני פריסות לפי יישום";
+"Raised when a correction to a layout is kept, lowered when it is undone. At −3 or below, corrections to that layout become suggestions in that app." = "עולה כשתיקון לפריסה נשמר, יורד כשהוא מבוטל. ב-‎−3 ומטה, תיקונים לפריסה זו הופכים להצעות ביישום זה.";
+"Sentence patterns by app" = "דפוסי משפטים לפי יישום";
+"Which language usually follows which in a sentence. A pattern seen often makes the next word's language more certain." = "איזו שפה בדרך כלל באה אחרי איזו במשפט. דפוס שנראה לעיתים קרובות מגביר את הוודאות בשפת המילה הבאה.";
+"kept %@ · undone %@" = "נשמרו %@ · בוטלו %@";
+"text" = "טקסט";
+"code" = "קוד";
+"links and commands" = "קישורים ופקודות";
+"night (0–6)" = "לילה (0–6)";
+"day (7–18)" = "יום (7–18)";
+"evening (19–23)" = "ערב (19–23)";
+"last change %@" = "שינוי אחרון %@";
+"Corrections become hotkey-only" = "תיקונים בקיצור מקשים בלבד";
+"Corrections become suggestions" = "תיקונים הופכים להצעות";
+"No effect" = "ללא השפעה";
+"%d patterns" = "%d דפוסים";

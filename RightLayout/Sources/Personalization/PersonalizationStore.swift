@@ -86,6 +86,11 @@ public actor PersonalizationStore {
         save()
     }
     
+    /// Every app's learned layout scores, for the Adaptation page.
+    func allPriors() -> [Int: [String: Double]] {
+        state.contextPriors
+    }
+
     /// Returns statistics for the Settings UI
     func getStats() -> (contexts: Int, events: Int) {
         return (state.contextPriors.count, state.totalLearningEvents)
