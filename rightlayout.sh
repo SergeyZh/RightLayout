@@ -695,6 +695,17 @@ cmd_release_status() {
   fi
 }
 
+# The commit being built, for the problem report: "f43fb78", or "f43fb78-dirty" with
+# uncommitted changes; empty outside a git checkout.
+build_commit() {
+  local commit
+  commit=$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null) || return 0
+  if [[ -n "$(git -C "${ROOT_DIR}" status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+    commit="${commit}-dirty"
+  fi
+  printf "%s" "${commit}"
+}
+
 cmd_run() {
   local with_logs=0
   local binary_path=""
@@ -733,7 +744,9 @@ cmd_run() {
   if [[ -f "${ROOT_DIR}/VERSION" ]]; then
     version_env=$(tr -d '[:space:]' < "${ROOT_DIR}/VERSION")
   fi
-  (cd "${ROOT_DIR}" && RIGHTLAYOUT_APP_VERSION="${version_env}" "${binary_path}") &
+  local commit_env
+  commit_env=$(build_commit)
+  (cd "${ROOT_DIR}" && RIGHTLAYOUT_APP_VERSION="${version_env}" RIGHTLAYOUT_BUILD_COMMIT="${commit_env}" "${binary_path}") &
   local app_pid=$!
 
   sleep 2

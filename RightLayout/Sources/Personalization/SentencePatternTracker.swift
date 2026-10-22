@@ -129,6 +129,11 @@ actor SentencePatternTracker {
         save()
     }
 
+    /// Every app's language patterns and how often each was seen, for the Adaptation page.
+    func allPatterns() -> [String: [String: Int]] {
+        state.appPatterns
+    }
+
     // MARK: - Persistence
 
     private static func loadState(from fileURL: URL, logger: Logger) -> SentencePatternState {

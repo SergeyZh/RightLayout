@@ -71,7 +71,7 @@ actor RiskController {
         if candidateConfidence < 0.5 { return .reject }
 
         let state = states[contextKey] ?? RiskState()
-        let lowerBound = calculateLowerBound(state)
+        let lowerBound = Self.calculateLowerBound(state)
 
         if candidateConfidence >= 0.90 {
             return .autoApply
@@ -104,17 +104,27 @@ actor RiskController {
         if let forcedPolicy { return forcedPolicy }
         if isManual || testMode { return policy }
 
-        let state = states[contextKey] ?? RiskState()
-        let lowerBound = calculateLowerBound(state)
+        return Self.demote(policy: policy, state: states[contextKey] ?? RiskState())
+    }
+
+    /// What `state` makes of `policy`: a context where corrections were often undone
+    /// gets suggestions instead of corrections, and then only the hotkey.
+    ///
+    /// Only what is known to be bad demotes: even the most hopeful reading of the kept
+    /// share must fall short. Judged by the most doubtful reading instead, a few kept
+    /// corrections and none undone were too little proof, and demoted the context they
+    /// were kept in (Notes, 76% kept, was left to the hotkey).
+    static func demote(policy: RiskPolicy, state: RiskState) -> RiskPolicy {
+        let upperBound = calculateUpperBound(state)
 
         switch policy {
         case .autoApply:
-            if state.totalEvidence >= 4.0, lowerBound < 0.60 {
+            if state.totalEvidence >= 4.0, upperBound < 0.70 {
                 return .suggestHint
             }
             return .autoApply
         case .suggestHint:
-            if state.totalEvidence >= 6.0, lowerBound < 0.45 {
+            if state.totalEvidence >= 6.0, upperBound < 0.50 {
                 return .holdForHotkey
             }
             return .suggestHint
@@ -138,7 +148,23 @@ actor RiskController {
         await save()
     }
 
-    private func calculateLowerBound(_ state: RiskState) -> Double {
+    /// Everything learned so far, for the Adaptation page.
+    func allStates() -> [ContextKey: RiskState] {
+        states
+    }
+
+    /// Forgets everything learned.
+    func reset() async {
+        states.removeAll()
+        await save()
+    }
+
+    private static func calculateUpperBound(_ state: RiskState) -> Double {
+        let uncertainty = 1.0 / sqrt(state.totalEvidence + 1.0)
+        return state.mean + uncertainty
+    }
+
+    private static func calculateLowerBound(_ state: RiskState) -> Double {
         let uncertainty = 1.0 / sqrt(state.totalEvidence + 1.0)
         return state.mean - uncertainty
     }

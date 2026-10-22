@@ -198,4 +198,101 @@ final class FieldReportRegressionTests: XCTestCase {
             "Punctuation stays"
         )
     }
+
+    // MARK: "Cgfcb,j!" and "\"nj" were only suggested; "b" after "Прочитай" was left
+
+    func testWordWithPunctuationKeysAndSentencePunctuationIsCorrected() async {
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            let planned = await engine.planCorrection("Cgfcb,j!", editingEnvironment: environment)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("Cgfcb,j! (\(environment)): expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, "Спасибо!")
+        }
+    }
+
+    func testWordStartingWithAQuoteKeyIsCorrectedWhereTextCannotBeReadBack() async {
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
+        let planned = await engine.planCorrection("\"nj", editingEnvironment: .nonAccessibility)
+        guard case .autoReplace(let candidate) = planned.plan else {
+            return XCTFail("\"nj: expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+        }
+        XCTAssertEqual(candidate.replacement, "Это")
+    }
+
+    /// The reporter's own settings: the aggressive preset, the ABC layout, learning on.
+    func testWordStartingWithAQuoteKeyIsCorrectedWithTheReportersSettings() async {
+        let saved = await MainActor.run { () -> (SettingsManager.BehaviorPreset, Int, Double) in
+            let settings = SettingsManager.shared
+            let saved = (settings.behaviorPreset, settings.minAutoCorrectWordLength, settings.blindAutoCorrectConfidence)
+            settings.customEnabledLanguages = [.english, .russian]
+            settings.activeLayouts = ["en": "abc", "he": "hebrew", "ru": "russianwin"]
+            settings.behaviorPreset = .aggressive
+            settings.minAutoCorrectWordLength = AutoCorrectionLimits.default.minimumWordLength
+            settings.blindAutoCorrectConfidence = AutoCorrectionLimits.default.blindConfidence
+            settings.isLearningEnabled = true
+            return saved
+        }
+        // As in the report: "Cgfcb,j!" was corrected to Russian just before "\"nj", so the
+        // history's last language is Russian for the second word.
+        for (typed, expected) in [("\"nj", "Это"), ("Cgfcb,j!", "Спасибо!"), ("\"nj", "Это")] {
+            let planned = await engine.planCorrection(typed, editingEnvironment: .nonAccessibility)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("\(typed): expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, expected)
+        }
+
+        // With a minimum word length of 3 the two-letter "Это" is left to the hotkey,
+        // and the trail says so.
+        await MainActor.run { SettingsManager.shared.minAutoCorrectWordLength = 3 }
+        let limited = await engine.planCorrection("\"nj", editingEnvironment: .nonAccessibility)
+        if case .autoReplace = limited.plan {
+            XCTFail("\"nj must be left to the hotkey with a minimum word length of 3")
+        }
+        XCTAssertTrue(limited.trail?.contains("below_min_length") == true, limited.trail ?? "-")
+
+        await MainActor.run {
+            let settings = SettingsManager.shared
+            settings.behaviorPreset = saved.0
+            settings.minAutoCorrectWordLength = saved.1
+            settings.blindAutoCorrectConfidence = saved.2
+        }
+    }
+
+    func testDecisionSaysHowAWordWasDecided() async {
+        let planned = await engine.planCorrection("Yf;fk", editingEnvironment: .accessibility)
+        XCTAssertNotNil(planned.trail)
+        XCTAssertTrue(planned.trail?.contains("policy=") == true, planned.trail ?? "-")
+    }
+
+    func testOneLetterRussianWordAfterARussianWordIsCorrected() async {
+        await MainActor.run {
+            SettingsManager.shared.customEnabledLanguages = [.english, .russian]
+            SettingsManager.shared.minAutoCorrectWordLength = 2
+        }
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            let planned = await engine.planCorrection("b", phraseBuffer: "Прочитай", editingEnvironment: environment)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("b (\(environment)): expected an automatic correction, got \(planned.plan)")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, "и")
+            XCTAssertEqual(planned.result.targetLanguage, .russian)
+        }
+        XCTAssertTrue(EventMonitor.isOneLetterRussianWord(original: "b", replacement: "и"))
+    }
+
+    func testOneLetterIsLeftAloneWithoutARussianWordBeforeIt() async {
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
+        for (token, phrase) in [("b", ""), ("b", "plan"), ("B", "Прочитай"), ("a", "Прочитай")] {
+            let planned = await engine.planCorrection(token, phraseBuffer: phrase, editingEnvironment: .nonAccessibility)
+            if case .autoReplace(let candidate) = planned.plan {
+                XCTFail("\(token) after \"\(phrase)\" was replaced with \(candidate.replacement)")
+            }
+        }
+    }
 }

@@ -232,6 +232,7 @@ final class LaggingHostEventMonitorTests: XCTestCase {
     private var settings: SettingsManager!
     private var eventMonitor: EventMonitor!
     private var mockTime: MockTimeProvider!
+    private var encoder: MockCharacterEncoder!
     private var originalAutoSwitchLayout = false
 
     @MainActor
@@ -244,7 +245,8 @@ final class LaggingHostEventMonitorTests: XCTestCase {
         engine = CorrectionEngine(settings: settings)
         await engine.clearHistory()
         mockTime = MockTimeProvider()
-        eventMonitor = EventMonitor(engine: engine, timeProvider: mockTime, charEncoder: MockCharacterEncoder())
+        encoder = MockCharacterEncoder()
+        eventMonitor = EventMonitor(engine: engine, timeProvider: mockTime, charEncoder: encoder)
         eventMonitor.skipPIDCheck = true
         eventMonitor.skipSecureInputCheck = true
         eventMonitor.skipEventPosting = true
@@ -302,21 +304,45 @@ final class LaggingHostEventMonitorTests: XCTestCase {
     }
 
     @MainActor
-    func testPauseInsideAWordKeepsItWhereTheFieldCanBeReadBack() {
-        eventMonitor.focusedHostCanVerifyText = true
+    func testPauseInsideAWordKeepsIt() {
         for code: CGKeyCode in [5, 4, 11] { press(code) } // "ghb"
         mockTime.advance(by: 2.5)
         for code: CGKeyCode in [2, 17, 45] { press(code) } // "dtn"
         XCTAssertEqual(eventMonitor.typedTokenForTesting, "ghbdtn")
     }
 
+    /// "Прочитай b" with the "b" erased and "и" typed instead stayed "Прочитай b и".
     @MainActor
-    func testPauseInsideAWordDropsItWhereTheFieldCannotBeReadBack() {
-        eventMonitor.focusedHostCanVerifyText = false
-        for code: CGKeyCode in [5, 4, 11] { press(code) }
-        mockTime.advance(by: 2.5)
-        for code: CGKeyCode in [2, 17, 45] { press(code) }
-        XCTAssertEqual(eventMonitor.typedTokenForTesting, "dtn")
+    func testErasedWordLeavesThePhrase() async throws {
+        encoder.mapping[14] = "e"
+        encoder.mapping[31] = "o"
+        for code: CGKeyCode in [17, 4, 14, 49] { press(code) } // "the "
+        try await Task.sleep(nanoseconds: 300_000_000)
+        for code: CGKeyCode in [2, 31, 5, 49] { press(code) } // "dog "
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(eventMonitor.phraseContextForTesting, "the dog")
+
+        press(51) // the space
+        XCTAssertEqual(eventMonitor.phraseContextForTesting, "the dog")
+        press(51) // "g"
+        XCTAssertEqual(eventMonitor.phraseContextForTesting, "the")
+        for _ in 0..<3 { press(51) } // "o", "d" and the space
+        XCTAssertEqual(eventMonitor.phraseContextForTesting, "the")
+        press(51) // "e"
+        XCTAssertEqual(eventMonitor.phraseContextForTesting, "")
+    }
+
+    @MainActor
+    func testBackspaceAfterTheCaretMovedLeavesThePhrase() async throws {
+        encoder.mapping[14] = "e"
+        encoder.mapping[31] = "o"
+        for code: CGKeyCode in [17, 4, 14, 49] { press(code) } // "the "
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(eventMonitor.phraseContextForTesting, "the")
+
+        press(123) // Left arrow: what Backspace erases is no longer known
+        for _ in 0..<3 { press(51) }
+        XCTAssertEqual(eventMonitor.phraseContextForTesting, "the")
     }
 
     @MainActor

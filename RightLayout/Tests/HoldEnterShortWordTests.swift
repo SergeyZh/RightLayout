@@ -91,6 +91,17 @@ final class HoldEnterShortWordTests: XCTestCase {
         try await check([5, 35, 17], word: "пзе", expected: "gpt", terminator: 49)
     }
 
+    /// A pause before Enter ("часа." … Enter) let the word go out unchecked.
+    func testWordIsFixedOnEnterAfterAPause() async throws {
+        await engine.resetCycling()
+        for code: CGKeyCode in [37, 3, 44] { press(code) }
+        mockTime.advance(by: 3.0)
+        XCTAssertFalse(press(36), "The Enter must be held for the word typed before the pause")
+        try await Task.sleep(nanoseconds: 700_000_000)
+        XCTAssertEqual(eventMonitor.lastReplacement?.insertedText.trimmingCharacters(in: .whitespaces), "Да.")
+        XCTAssertEqual(eventMonitor.releasedEnterCount, 0)
+    }
+
     /// With the conservative style a short word only gets a suggestion. On a held Enter
     /// there is no next word to confirm it, so the suggestion is applied before sending.
     func testConservativeShortWordSuggestionIsAppliedOnEnter() async throws {

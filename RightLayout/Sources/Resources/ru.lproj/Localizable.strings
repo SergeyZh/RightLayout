@@ -454,3 +454,32 @@
 "Copy problem report" = "Скопировать отчёт о проблеме";
 "Report copied" = "Отчёт скопирован";
 "Keeps the last minutes of what RightLayout saw and did, including the words you type, in memory only. When something goes wrong, copy the report and send it with a short note." = "Хранит последние минуты того, что RightLayout видел и делал, включая набираемые слова, — только в памяти. Когда что-то пошло не так, скопируйте отчёт и отправьте его с коротким описанием.";
+
+/* Adaptation data */
+"Demoting contexts" = "Понижающие контексты";
+"Learned data files" = "Файлы с данными обучения";
+"Everything adaptation keeps is stored locally in these files." = "Всё, что запоминает адаптация, хранится локально в этих файлах.";
+"Show in Finder" = "Показать в Finder";
+"Deletes everything adaptation has learned: kept and undone corrections, layout preferences and sentence patterns. Manual rules remain separate below." = "Удаляет всё, чему научилась адаптация: принятые и отменённые исправления, оценки раскладок и шаблоны предложений. Ручные правила ниже не затрагиваются.";
+"What adaptation has learned" = "Чему научилась адаптация";
+"Read from the stored data. Learning only makes corrections more cautious: where they were often undone, they become suggestions, and then hotkey-only." = "Прочитано из сохранённых данных. Обучение делает исправления только осторожнее: там, где их часто отменяли, они становятся подсказками, а затем — только по горячей клавише.";
+"Refresh" = "Обновить";
+"Nothing learned yet." = "Пока ничего не выучено.";
+"Corrections kept and undone" = "Принятые и отменённые исправления";
+"By app, kind of text and time of day. A context starts trusted; corrections undone there make it cautious." = "По приложению, виду текста и времени суток. Сначала контексту доверяют; отменённые в нём исправления делают его осторожным.";
+"Layout scores by app" = "Оценки раскладок по приложениям";
+"Raised when a correction to a layout is kept, lowered when it is undone. At −3 or below, corrections to that layout become suggestions in that app." = "Растёт, когда исправление в раскладку принято, и падает, когда отменено. При −3 и ниже исправления в эту раскладку в этом приложении становятся подсказками.";
+"Sentence patterns by app" = "Шаблоны предложений по приложениям";
+"Which language usually follows which in a sentence. A pattern seen often makes the next word's language more certain." = "Какой язык обычно следует за каким в предложении. Частый шаблон повышает уверенность в языке следующего слова.";
+"kept %@ · undone %@" = "принято %@ · отменено %@";
+"text" = "текст";
+"code" = "код";
+"links and commands" = "ссылки и команды";
+"night (0–6)" = "ночь (0–6)";
+"day (7–18)" = "день (7–18)";
+"evening (19–23)" = "вечер (19–23)";
+"last change %@" = "изменено %@";
+"Corrections become hotkey-only" = "Исправления — только по горячей клавише";
+"Corrections become suggestions" = "Исправления становятся подсказками";
+"No effect" = "Не влияет";
+"%d patterns" = "шаблонов: %d";

@@ -204,8 +204,30 @@ final class CorrectionDecisionPolicyTests: XCTestCase {
         )
     }
 
+    /// "Cgfcb,j!" ("Спасибо!") was only suggested in Slack: the "!" kept it from counting
+    /// as a word.
+    func testWordWithPunctuationKeysAndAnExclamationMarkAutoApplies() {
+        let evidence = makeEvidence(
+            original: "Cgfcb,j!",
+            converted: "Спасибо!",
+            confidence: 0.95,
+            margin: 0.95,
+            tokenKind: .punctuated
+        )
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            for preset in [SettingsManager.BehaviorPreset.balanced, .aggressive] {
+                XCTAssertEqual(
+                    CorrectionDecisionPolicy.evaluate(evidence: evidence, environment: environment, preset: preset),
+                    .autoApply,
+                    "\(environment) (\(preset))"
+                )
+            }
+        }
+    }
+
     func testBlindRetypeTakesTheLettersOfTheConvertedWord() {
         XCTAssertEqual(EventMonitor.blindReplayWord(original: "Yf;fk ", replacement: "Нажал").map(String.init), "Нажал")
+        XCTAssertEqual(EventMonitor.blindReplayWord(original: "Cgfcb,j! ", replacement: "Спасибо!").map(String.init), "Спасибо")
         XCTAssertEqual(EventMonitor.blindReplayWord(original: "ghbdtn ", replacement: "привет").map(String.init), "ghbdtn")
         XCTAssertEqual(EventMonitor.blindReplayWord(original: "Lf/ ", replacement: "Да.").map(String.init), "Lf")
         XCTAssertNil(EventMonitor.blindReplayWord(original: "Ж-) ", replacement: ":-)"))

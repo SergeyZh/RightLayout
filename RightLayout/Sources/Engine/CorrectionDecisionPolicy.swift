@@ -200,9 +200,11 @@ package enum CorrectionDecisionPolicy {
         case .punctuated:
             // Keys that are punctuation on one layout and letters on the other: a
             // Russian word with "ж", "х", "э", "б" or "ю" typed on the English layout
-            // ("Yf;fk" is "Нажал").
+            // ("Yf;fk" is "Нажал"), maybe with sentence punctuation at its edges
+            // ("Cgfcb,j!" is "Спасибо!").
             let convertsToWord = letterCount >= 2
-                && evidence.convertedText.allSatisfy({ $0.isLetter || $0.isWhitespace || $0 == "«" || $0 == "»" || $0 == "\"" || $0 == "'" })
+                && (evidence.convertedText.allSatisfy({ $0.isLetter || $0.isWhitespace || $0 == "«" || $0 == "»" || $0 == "\"" || $0 == "'" })
+                    || letterCore(of: evidence.convertedText) != nil)
             switch environment {
             case .accessibility:
                 if convertsToWord,
