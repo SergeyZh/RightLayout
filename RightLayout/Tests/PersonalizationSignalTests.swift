@@ -151,9 +151,18 @@ final class PersonalizationSignalTests: XCTestCase {
         mockTime.advance(by: 0.1)
         typeKey(code: 51)
         
-        // Backspace 3 (Ticket 55: Burst threshold requires 3)
+        // Backspace 3: the space and two letters are gone, the rest of "привет" stays.
         mockTime.advance(by: 0.1)
-        typeKey(code: 51) // Burst threshold met (count=3)
+        typeKey(code: 51)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let early = await engine.lastReportedSignal
+        XCTAssertNil(early, "Fixing the end of a corrected word doesn't take the correction back")
+
+        // Erasing the rest of "привет" does.
+        for _ in 0..<4 {
+            mockTime.advance(by: 0.1)
+            typeKey(code: 51)
+        }
         
         // Allow async reporting
         try await Task.sleep(nanoseconds: 50_000_000)

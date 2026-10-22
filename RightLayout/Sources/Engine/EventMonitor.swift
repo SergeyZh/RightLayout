@@ -134,10 +134,11 @@ public final class EventMonitor {
 
     private var inputSession = InputSession()
     private var lastActiveApp: String = ""
-    private var backspaceCount = 0
     private var lastCorrectionTrackingId: UUID?
+    /// How many characters before the caret reach back to the start of the word last
+    /// corrected automatically; Backspace undoes the correction once it erased them all.
+    private var correctionErase: (id: UUID, remaining: Int)?
     private var backspaceReportedForId: UUID?
-    private var lastBackspaceTime: Date?
     private var lastCorrectionTime: Date = .distantPast
     private var keyTimings: [TimeInterval] = []
     private var lastKeyTime: Date?
@@ -601,9 +602,6 @@ public final class EventMonitor {
             cancelStandaloneOptionTap()
             handleBackspace()
             return Unmanaged.passUnretained(event)
-        } else {
-            backspaceCount = 0
-            backspaceReportedForId = nil
         }
 
         if Self.navigationKeys.contains(keyCode) {
@@ -642,6 +640,10 @@ public final class EventMonitor {
            now.timeIntervalSince(last) > ThresholdsConfig.shared.timing.bufferTimeout {
             trace.log(.bufferTimeout, fields: ["kept": inputSession.typedToken])
             keyTimings.removeAll()
+        }
+
+        if let erase = correctionErase {
+            correctionErase = (erase.id, erase.remaining + chars.count)
         }
 
         if isWordBoundaryTrigger(chars) {
@@ -873,37 +875,29 @@ public final class EventMonitor {
         lastKeyTime = timeProvider.now
         Task { await engine.resetCycling() }
 
-        let now = timeProvider.now
-        let timeSinceLastBackspace = now.timeIntervalSince(lastBackspaceTime ?? .distantPast)
-        lastBackspaceTime = now
-
-        if timeSinceLastBackspace < 0.5 {
-            backspaceCount += 1
-        } else {
-            backspaceCount = 1
+        // Erasing the corrected word whole takes the correction back. Fewer Backspaces fix
+        // its ending or a typo in the next word, which says nothing against the
+        // correction (three quick ones used to count as taking it back, and made
+        // contexts where most corrections were kept cautious).
+        guard let erase = correctionErase, erase.id == lastCorrectionTrackingId else {
+            correctionErase = nil
+            return
         }
-
-        if backspaceCount >= 3 {
-            if let id = lastCorrectionTrackingId, backspaceReportedForId != id {
-                Task {
-                    if let transaction = await engine.transaction(for: id),
-                       let transactionEpoch = transaction.sessionEpoch,
-                       transactionEpoch != self.inputSession.sessionEpoch {
-                        return
-                    }
-                    await engine.reportNegativeFeedback(id: id, reason: .backspaceBurst)
-                }
-                backspaceReportedForId = id
+        guard erase.remaining <= 1 else {
+            correctionErase = (erase.id, erase.remaining - 1)
+            return
+        }
+        correctionErase = nil
+        let id = erase.id
+        guard backspaceReportedForId != id else { return }
+        backspaceReportedForId = id
+        Task {
+            if let transaction = await engine.transaction(for: id),
+               let transactionEpoch = transaction.sessionEpoch,
+               transactionEpoch != self.inputSession.sessionEpoch {
                 return
             }
-
-            Task { @MainActor in
-                let engineFallbackId = await engine.currentPendingFeedbackId()
-                let fallbackId = lastCorrectionTrackingId ?? engineFallbackId
-                guard let id = fallbackId, backspaceReportedForId != id else { return }
-                await engine.reportNegativeFeedback(id: id, reason: .backspaceBurst)
-                backspaceReportedForId = id
-            }
+            await engine.reportNegativeFeedback(id: id, reason: .backspaceBurst)
         }
     }
 
@@ -1899,6 +1893,11 @@ public final class EventMonitor {
         if committed.wasAutoApplied {
             lastCorrectionTrackingId = committed.id
             lastCorrectionTime = timeProvider.now
+            // The corrected word, its separator and whatever was typed after it.
+            correctionErase = (
+                committed.id,
+                committed.replacement.count + (lastCommittedToken?.separator.count ?? 0) + inputSession.typedToken.count
+            )
         }
     }
 
@@ -2396,6 +2395,8 @@ public final class EventMonitor {
             inputSession.phraseContext = ""
         }
         inputSession.charactersAfterPhrase = nil
+        // What Backspace erases after the caret moved is unknown.
+        correctionErase = nil
         inputSession.isDirty = true
         inputSession.lastVerifiedSnapshot = nil
         inputSession.lastMutationAt = timeProvider.now
@@ -2477,6 +2478,8 @@ public final class EventMonitor {
             inputSession.phraseContext = ""
         }
         inputSession.charactersAfterPhrase = nil
+        // What Backspace erases after the caret moved is unknown.
+        correctionErase = nil
         inputSession.isDirty = true
         inputSession.lastVerifiedSnapshot = nil
         inputSession.lastMutationAt = timeProvider.now
@@ -2835,6 +2838,7 @@ public final class EventMonitor {
 
     private func clearPendingCorrectionTracking() {
         lastCorrectionTrackingId = nil
+        correctionErase = nil
         backspaceReportedForId = nil
         lastCorrectionTime = .distantPast
     }

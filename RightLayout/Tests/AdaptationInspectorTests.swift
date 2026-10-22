@@ -49,6 +49,31 @@ final class AdaptationInspectorTests: XCTestCase {
         XCTAssertFalse(snapshot.isEmpty)
     }
 
+    private func state(kept: Double, undone: Double) -> RiskState {
+        var state = RiskState()
+        state.alpha = 1.0 + kept
+        state.beta = 1.0 + undone * 1.25
+        return state
+    }
+
+    /// From the reporter's Adaptation page: contexts where most corrections were kept
+    /// were left to suggestions or the hotkey.
+    func testMostlyKeptCorrectionsAreNotDemoted() {
+        for (kept, undone) in [(5.6, 1.8), (9.0, 1.8), (3.8, 1.9), (2.0, 0.0), (5.0, 0.0), (8.0, 0.0), (10.1, 0.0)] {
+            let learned = state(kept: kept, undone: undone)
+            XCTAssertEqual(RiskController.demote(policy: .autoApply, state: learned), .autoApply, "kept \(kept), undone \(undone)")
+            XCTAssertEqual(RiskController.demote(policy: .suggestHint, state: learned), .suggestHint, "kept \(kept), undone \(undone)")
+        }
+    }
+
+    func testMostlyUndoneCorrectionsAreDemoted() {
+        XCTAssertEqual(RiskController.demote(policy: .autoApply, state: state(kept: 0, undone: 2)), .suggestHint)
+        XCTAssertEqual(RiskController.demote(policy: .autoApply, state: state(kept: 1, undone: 3)), .suggestHint)
+        XCTAssertEqual(RiskController.demote(policy: .suggestHint, state: state(kept: 0, undone: 4)), .holdForHotkey)
+        // Too little to go on.
+        XCTAssertEqual(RiskController.demote(policy: .autoApply, state: state(kept: 0, undone: 1)), .autoApply)
+    }
+
     func testNothingLearnedIsEmpty() {
         let snapshot = AdaptationInspector.assemble(risk: [:], priors: [:], learningEvents: 0, patterns: [:], apps: [], names: [:])
         XCTAssertTrue(snapshot.isEmpty)
