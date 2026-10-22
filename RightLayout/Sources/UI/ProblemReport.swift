@@ -23,6 +23,7 @@ enum ProblemReport {
         lines.append("Layouts: \(settings.activeLayouts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ", "))")
         lines.append("Current input source: \(InputSourceManager.shared.currentLayoutId() ?? "unknown")")
         lines.append("Preset: \(settings.behaviorPreset.rawValue), manual trigger: \(settings.manualTriggerMode.rawValue), switch layout: \(settings.autoSwitchLayout), hold Enter: \(settings.holdEnterForCorrection)")
+        lines.append("Auto-correction limits: minimum word length \(settings.minAutoCorrectWordLength), blind confidence \(String(format: "%.2f", settings.blindAutoCorrectConfidence)), learning: \(settings.isLearningEnabled)")
         lines.append("Detailed log: \(settings.isDetailedLogEnabled ? "on" : "off")")
 
         lines.append("")

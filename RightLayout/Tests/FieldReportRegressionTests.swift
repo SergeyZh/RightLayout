@@ -222,6 +222,45 @@ final class FieldReportRegressionTests: XCTestCase {
         XCTAssertEqual(candidate.replacement, "Это")
     }
 
+    /// The reporter's own settings: the aggressive preset, the ABC layout, learning on.
+    func testWordStartingWithAQuoteKeyIsCorrectedWithTheReportersSettings() async {
+        let saved = await MainActor.run { () -> (SettingsManager.BehaviorPreset, Int, Double) in
+            let settings = SettingsManager.shared
+            let saved = (settings.behaviorPreset, settings.minAutoCorrectWordLength, settings.blindAutoCorrectConfidence)
+            settings.customEnabledLanguages = [.english, .russian]
+            settings.activeLayouts = ["en": "abc", "he": "hebrew", "ru": "russianwin"]
+            settings.behaviorPreset = .aggressive
+            settings.minAutoCorrectWordLength = AutoCorrectionLimits.default.minimumWordLength
+            settings.blindAutoCorrectConfidence = AutoCorrectionLimits.default.blindConfidence
+            settings.isLearningEnabled = true
+            return saved
+        }
+        for (typed, expected) in [("\"nj", "Это"), ("Cgfcb,j!", "Спасибо!")] {
+            let planned = await engine.planCorrection(typed, editingEnvironment: .nonAccessibility)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("\(typed): expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, expected)
+        }
+
+        // With a minimum word length of 3 the two-letter "Это" is left to the hotkey,
+        // and the trail says so.
+        await MainActor.run { SettingsManager.shared.minAutoCorrectWordLength = 3 }
+        let limited = await engine.planCorrection("\"nj", editingEnvironment: .nonAccessibility)
+        if case .autoReplace = limited.plan {
+            XCTFail("\"nj must be left to the hotkey with a minimum word length of 3")
+        }
+        XCTAssertTrue(limited.trail?.contains("below_min_length") == true, limited.trail ?? "-")
+
+        await MainActor.run {
+            let settings = SettingsManager.shared
+            settings.behaviorPreset = saved.0
+            settings.minAutoCorrectWordLength = saved.1
+            settings.blindAutoCorrectConfidence = saved.2
+        }
+    }
+
     func testDecisionSaysHowAWordWasDecided() async {
         let planned = await engine.planCorrection("Yf;fk", editingEnvironment: .accessibility)
         XCTAssertNotNil(planned.trail)
