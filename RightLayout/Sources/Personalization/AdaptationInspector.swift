@@ -144,7 +144,7 @@ enum AdaptationInspector {
             return $0.lastUpdate > $1.lastUpdate
         }
 
-        let preferences = priors.map { hash, scores in
+        let preferences = priors.map { hash, scores -> AdaptationSnapshot.LayoutPreference in
             let bundleId = appByHash[hash]
             return AdaptationSnapshot.LayoutPreference(
                 id: hash,
