@@ -198,4 +198,60 @@ final class FieldReportRegressionTests: XCTestCase {
             "Punctuation stays"
         )
     }
+
+    // MARK: "Cgfcb,j!" and "\"nj" were only suggested; "b" after "Прочитай" was left
+
+    func testWordWithPunctuationKeysAndSentencePunctuationIsCorrected() async {
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            let planned = await engine.planCorrection("Cgfcb,j!", editingEnvironment: environment)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("Cgfcb,j! (\(environment)): expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, "Спасибо!")
+        }
+    }
+
+    func testWordStartingWithAQuoteKeyIsCorrectedWhereTextCannotBeReadBack() async {
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
+        let planned = await engine.planCorrection("\"nj", editingEnvironment: .nonAccessibility)
+        guard case .autoReplace(let candidate) = planned.plan else {
+            return XCTFail("\"nj: expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+        }
+        XCTAssertEqual(candidate.replacement, "Это")
+    }
+
+    func testDecisionSaysHowAWordWasDecided() async {
+        let planned = await engine.planCorrection("Yf;fk", editingEnvironment: .accessibility)
+        XCTAssertNotNil(planned.trail)
+        XCTAssertTrue(planned.trail?.contains("policy=") == true, planned.trail ?? "-")
+    }
+
+    func testOneLetterRussianWordAfterARussianWordIsCorrected() async {
+        await MainActor.run {
+            SettingsManager.shared.customEnabledLanguages = [.english, .russian]
+            SettingsManager.shared.minAutoCorrectWordLength = 2
+        }
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            let planned = await engine.planCorrection("b", phraseBuffer: "Прочитай", editingEnvironment: environment)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("b (\(environment)): expected an automatic correction, got \(planned.plan)")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, "и")
+            XCTAssertEqual(planned.result.targetLanguage, .russian)
+        }
+        XCTAssertTrue(EventMonitor.isOneLetterRussianWord(original: "b", replacement: "и"))
+    }
+
+    func testOneLetterIsLeftAloneWithoutARussianWordBeforeIt() async {
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
+        for (token, phrase) in [("b", ""), ("b", "plan"), ("B", "Прочитай"), ("a", "Прочитай")] {
+            let planned = await engine.planCorrection(token, phraseBuffer: phrase, editingEnvironment: .nonAccessibility)
+            if case .autoReplace(let candidate) = planned.plan {
+                XCTFail("\(token) after \"\(phrase)\" was replaced with \(candidate.replacement)")
+            }
+        }
+    }
 }

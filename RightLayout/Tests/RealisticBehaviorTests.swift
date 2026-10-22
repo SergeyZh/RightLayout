@@ -101,7 +101,6 @@ final class RealisticBehaviorTests: XCTestCase {
     
     @MainActor
     func testMidWordPause() async throws {
-        // Pause > 2.0s triggers buffer clear in handleEvent
         // Type "ghb"
         await typeChar("g", keyCode: 5)
         await typeChar("h", keyCode: 4)
@@ -118,13 +117,10 @@ final class RealisticBehaviorTests: XCTestCase {
         
         try await Task.sleep(nanoseconds: 500_000_000)
         
-        // Expectation: buffer cleared after "ghb", so the timed-out token must not be
-        // merged into a synthetic "ghbdtn" correction attempt. Under v3 fail-closed
-        // rules the isolated fragment may remain uncorrected, so history can be empty.
+        // A pause inside a word keeps its start: judged alone, "dtn" was never "привет".
         let history = await engine.getHistory()
-        let lastOriginal = history.first?.original
-        XCTAssertNotEqual(lastOriginal, "ghbdtn", "Timed-out input must not be merged into the prior token")
-        XCTAssertTrue(lastOriginal == nil || lastOriginal == "dtn", "Only the post-timeout fragment may be considered for correction")
+        XCTAssertEqual(history.first?.original, "ghbdtn")
+        XCTAssertEqual(history.first?.corrected, "привет")
     }
     
     @MainActor

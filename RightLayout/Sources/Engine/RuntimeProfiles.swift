@@ -196,6 +196,7 @@ package enum RuntimeTraceEvent: String, Sendable {
     case planReady = "plan_ready"
     case replacementStarted = "replacement_started"
     case replacementFinished = "replacement_finished"
+    case replacementSkipped = "replacement_skipped"
     case hotkeyPressed = "hotkey_pressed"
     case layoutSwitchRequested = "layout_switch_requested"
     case layoutSwitchObserved = "layout_switch_observed"

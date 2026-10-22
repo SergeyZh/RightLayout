@@ -17,6 +17,7 @@ enum ProblemReport {
         lines.append("RightLayout problem report")
         lines.append("Created: \(time(now))")
         lines.append("Version: \(AppVersionResolver.current())")
+        lines.append("Build: \(AppVersionResolver.buildCommit() ?? "unknown")")
         lines.append("macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)")
         lines.append("Working languages: \(settings.enabledLanguages.map(\.rawValue).sorted().joined(separator: ", "))")
         lines.append("Layouts: \(settings.activeLayouts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ", "))")

@@ -27,6 +27,12 @@ else
     VERSION=$("$PROJECT_DIR/scripts/build_version.sh")
 fi
 
+# The commit being built, shown in the problem report ("-dirty" with uncommitted changes).
+BUILD_COMMIT=$(git -C "$PROJECT_DIR" rev-parse --short HEAD 2>/dev/null || true)
+if [ -n "$BUILD_COMMIT" ] && [ -n "$(git -C "$PROJECT_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    BUILD_COMMIT="$BUILD_COMMIT-dirty"
+fi
+
 BUILD_DIR="$SCRIPT_DIR/build"
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
 DMG_PATH="$SCRIPT_DIR/$DMG_BASENAME-$VERSION.dmg"
@@ -120,6 +126,8 @@ cat > "$APP_PATH/Contents/Info.plist" <<EOF
     <string>$VERSION</string>
     <key>CFBundleShortVersionString</key>
     <string>$VERSION</string>
+    <key>RightLayoutBuildCommit</key>
+    <string>$BUILD_COMMIT</string>
     <key>CFBundleExecutable</key>
     <string>$EXECUTABLE_NAME</string>
     <key>CFBundleIconFile</key>

@@ -67,6 +67,19 @@ enum AppVersionResolver {
         return candidates
     }
 
+    /// The commit the app was built from ("f43fb78", "f43fb78-dirty" with local changes),
+    /// as `rightlayout.sh run` passes it or a release build records it, or nil.
+    static func buildCommit(
+        bundle: Bundle = .main,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String? {
+        normalized(environment[commitEnvironmentKey])
+            ?? normalized(bundle.infoDictionary?[commitInfoKey] as? String)
+    }
+
+    private static let commitEnvironmentKey = "RIGHTLAYOUT_BUILD_COMMIT"
+    private static let commitInfoKey = "RightLayoutBuildCommit"
+
     private static func normalized(_ version: String?) -> String? {
         guard let version else { return nil }
         let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)

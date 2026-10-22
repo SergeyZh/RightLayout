@@ -20,6 +20,35 @@ struct CorrectionCandidate: Sendable {
 struct PlannedCorrection: Sendable {
     let result: CorrectionEngine.CorrectionResult
     let plan: CorrectionPlan
+    /// How the word was decided, for the detailed log ("policy=autoApply,learning=suggestHint").
+    var trail: String? = nil
+}
+
+/// Notes on how the word being decided got its outcome: the policy's verdict and what
+/// changed it afterwards. A problem report then says why a sure correction was only
+/// suggested instead of leaving it to guesswork.
+final class DecisionTrail: @unchecked Sendable {
+    @TaskLocal static var current: DecisionTrail?
+
+    private let lock = NSLock()
+    private var notes: [String] = []
+
+    /// Adds `note` to the trail of the word being decided, if any.
+    static func note(_ note: String) {
+        current?.append(note)
+    }
+
+    func append(_ note: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        notes.append(note)
+    }
+
+    var summary: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return notes.isEmpty ? nil : notes.joined(separator: ",")
+    }
 }
 
 extension CorrectionEngine {
@@ -30,13 +59,16 @@ extension CorrectionEngine {
         latencies: [TimeInterval] = [],
         editingEnvironment: EditingEnvironment = .accessibility
     ) async -> PlannedCorrection {
-        let result = await correctText(
-            text,
-            phraseBuffer: phraseBuffer,
-            expectedLayout: expectedLayout,
-            latencies: latencies,
-            editingEnvironment: editingEnvironment
-        )
+        let trail = DecisionTrail()
+        let result = await DecisionTrail.$current.withValue(trail) {
+            await correctText(
+                text,
+                phraseBuffer: phraseBuffer,
+                expectedLayout: expectedLayout,
+                latencies: latencies,
+                editingEnvironment: editingEnvironment
+            )
+        }
 
         let candidate = CorrectionCandidate(
             original: text,
@@ -62,7 +94,7 @@ extension CorrectionEngine {
             plan = .none
         }
 
-        return PlannedCorrection(result: result, plan: plan)
+        return PlannedCorrection(result: result, plan: plan, trail: trail.summary)
     }
 
     func currentManualCyclePlan() -> CorrectionPlan {

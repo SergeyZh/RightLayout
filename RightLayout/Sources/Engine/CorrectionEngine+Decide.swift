@@ -86,13 +86,20 @@ extension CorrectionEngine {
         // Abbreviations and emoticons aren't words, so the routing below can't judge them;
         // and "n/r/" would be taken for a path by the intent check.
         if let shorthand = await shorthandCorrection(for: text) {
+            DecisionTrail.note("shorthand")
             return shorthand
+        }
+
+        if let letter = await singleLetterAfterRussianPhrase(text, phraseBuffer: phraseBuffer) {
+            DecisionTrail.note("single_letter_after_ru")
+            return letter
         }
 
         // Ticket 42: Safety Gating (Code/URL detection)
         // Check if text looks like code or URL/Command before expensive routing
         let intent = await intentDetector.detect(text: text)
         if intent != .prose {
+             DecisionTrail.note("intent=\(intent)")
              logger.info("🛡️ Intent detected: \(String(describing: intent)) - skipping correction for safety")
              return CorrectionResult(corrected: nil, action: .none, pendingCorrection: nil, pendingOriginal: nil, trackingId: nil, transliterationSuggestion: nil)
         }
@@ -136,26 +143,34 @@ extension CorrectionEngine {
         // decided like the bare word: its converted text is final.
         let isShortWithEdgePunctuation = evidence.tokenKind == .short && text.contains(where: { !$0.isLetter })
         // A word whose punctuation keys are letters on the other layout ("Yf;fk" is
-        // "Нажал") is converted whole: split at those keys, its pieces were converted on
-        // their own ("Yf;כל").
-        let isWordTypedWithPunctuationKeys = evidence.tokenKind == .punctuated
-            && evidence.isCorrection
-            && evidence.convertedText.allSatisfy(\.isLetter)
-            && (WordFrequencyModel.shared(evidence.targetLanguage.rawValue)?.contains(evidence.convertedText) ?? false)
+        // "Нажал", "Cgfcb,j!" is "Спасибо!") is converted whole: split at those keys, its
+        // pieces were converted on their own ("Yf;כל").
+        let punctuatedWord = evidence.tokenKind == .punctuated && evidence.isCorrection
+            ? CorrectionDecisionPolicy.letterCore(of: evidence.convertedText)
+            : nil
+        let isWordTypedWithPunctuationKeys = punctuatedWord.map {
+            WordFrequencyModel.shared(evidence.targetLanguage.rawValue)?.contains(String($0)) ?? false
+        } ?? false
         let usesFastLane = evidence.tokenKind == .plain
             || evidence.isWhitelistedShort
             || isShortWithEdgePunctuation
             || isWordTypedWithPunctuationKeys
+        DecisionTrail.note("policy=\(baseDisposition)")
         var riskPolicy = riskPolicy(for: baseDisposition)
         if await settings.isLearningEnabled {
-            riskPolicy = await personalizationEngine.demote(
+            let learned = await personalizationEngine.demote(
                 policy: riskPolicy,
                 features: features,
                 isManualIntent: false
             )
+            if learned != riskPolicy {
+                DecisionTrail.note("learning=\(learned.rawValue)")
+            }
+            riskPolicy = learned
         }
 
         if text.filter(\.isLetter).count < max(1, limits.minimumWordLength) {
+            DecisionTrail.note("below_min_length")
             riskPolicy = moreConservativeRiskPolicy(riskPolicy, .holdForHotkey)
         }
 
@@ -165,7 +180,12 @@ extension CorrectionEngine {
         if editingEnvironment == .nonAccessibility,
            evidence.tokenKind == .punctuated,
            !isWordTypedWithPunctuationKeys {
+            DecisionTrail.note("blind_punctuated_not_a_word")
             riskPolicy = moreConservativeRiskPolicy(riskPolicy, .suggestHint)
+        }
+        DecisionTrail.note("risk=\(riskPolicy.rawValue)")
+        if usesFastLane {
+            DecisionTrail.note("fast_lane")
         }
 
         if evidence.tokenKind == .short,
@@ -578,6 +598,7 @@ extension CorrectionEngine {
                     activeLayouts: activeLayouts
                 )
                 if !verdict.shouldApply {
+                    DecisionTrail.note("verifier_rejected")
                     logger.info("🔍 Verifier REJECTED main conversion: \(verdict.reason)")
                     return CorrectionResult(corrected: nil, action: .none, pendingCorrection: pendingCorrectionResult, pendingOriginal: pendingOriginalText, trackingId: nil, transliterationSuggestion: nil)
                 }
@@ -1091,6 +1112,88 @@ extension CorrectionEngine {
             confidence: 1.0,
             targetLanguage: isEmoticon ? nil : match.to
         )
+    }
+
+    /// A lone lowercase Latin letter right after a Russian word is a Russian one-letter
+    /// word typed on the English layout: "Прочитай b" is "Прочитай и" (the layout was
+    /// switched for an "@" and not back). No English word is a single "b", so it is
+    /// corrected now, and the layout switched before the next word, rather than left for
+    /// the next word to confirm.
+    ///
+    /// Only with the default minimum word length (or a shorter one) and outside the
+    /// conservative preset.
+    func singleLetterAfterRussianPhrase(_ text: String, phraseBuffer: String) async -> CorrectionResult? {
+        guard text.count == 1,
+              let letter = text.first,
+              letter.isASCII, letter.isLetter, letter.isLowercase,
+              Self.singleLetterWords[.english]?.contains(text) == false,
+              let previous = phraseBuffer.split(separator: " ").last,
+              Self.isRussianWord(String(previous)) else {
+            return nil
+        }
+        let preset = await settings.behaviorPreset
+        let limits = await settings.autoCorrectionLimits
+        let enabled = await settings.enabledLanguages
+        guard preset != .conservative,
+              limits.minimumWordLength <= AutoCorrectionLimits.default.minimumWordLength,
+              enabled.contains(.russian), enabled.contains(.english) else {
+            return nil
+        }
+        let activeLayouts = await settings.activeLayouts
+        guard let converted = LayoutMapper.shared.convertBest(text, from: .english, to: .russian, activeLayouts: activeLayouts),
+              Self.singleLetterWords[.russian]?.contains(converted) == true else {
+            return nil
+        }
+        logger.info("🔤 Single letter after a Russian word: '\(text)' → '\(converted)'")
+
+        let bundleId = await MainActor.run { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
+        let hypothesis = hypothesisFor(source: .english, target: .russian)
+        let confidence = 0.95
+        let (applied, transaction) = await applyCorrection(
+            original: text,
+            corrected: converted,
+            from: .english,
+            to: .russian,
+            hypothesis: hypothesis,
+            bundleId: bundleId,
+            riskPolicy: .autoApply,
+            confidence: confidence,
+            correctionPolicy: .autoApplied
+        )
+        cyclingState = CyclingContext(
+            originalText: text,
+            alternatives: [
+                CyclingContext.Alternative(text: text, hypothesis: nil),
+                CyclingContext.Alternative(text: applied, hypothesis: hypothesis)
+            ],
+            currentIndex: 1,
+            wasAutomatic: true,
+            autoHypothesis: hypothesis,
+            timestamp: Date(),
+            trailingSeparator: "",
+            visibleAlternativesCount: 2,
+            cycleCount: 0
+        )
+        registerSentenceContext(.russian)
+        return CorrectionResult(
+            corrected: applied,
+            action: .applied,
+            pendingCorrection: nil,
+            pendingOriginal: nil,
+            trackingId: transaction?.id,
+            transaction: transaction,
+            transliterationSuggestion: nil,
+            confidence: confidence,
+            targetLanguage: .russian
+        )
+    }
+
+    /// Whether `word` (punctuation aside) is written in Russian letters.
+    static func isRussianWord(_ word: String) -> Bool {
+        let letters = word.filter(\.isLetter)
+        return !letters.isEmpty && letters.unicodeScalars.allSatisfy {
+            (0x0410...0x044F).contains($0.value) || $0.value == 0x0401 || $0.value == 0x0451
+        }
     }
 
     /// Apply correction based on a decision (for pending word boost)

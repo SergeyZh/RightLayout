@@ -13,6 +13,10 @@ public final class EventMonitor {
         var mutationSeq: UInt64 = 0
         var typedToken: String = ""
         var phraseContext: String = ""
+        /// Characters in the field between the last word of `phraseContext` and the word
+        /// being typed (its separator, what is left of a word being erased), or nil when
+        /// the session doesn't know what lies before the caret.
+        var charactersAfterPhrase: Int?
         var startedAt: Date = .distantPast
         var lastMutationAt: Date = .distantPast
         var isDirty: Bool = false
@@ -168,8 +172,6 @@ public final class EventMonitor {
     /// When the current hold started; nil once it ran too long and keys go through again.
     private var userKeyHoldStartedAt: Date?
     private var userKeyHoldGeneration: UInt64 = 0
-    /// Whether the focused field's text could be read back at the last word boundary.
-    var focusedHostCanVerifyText = false
 
     private static let returnKeyCodes: Set<CGKeyCode> = [36, 76]
     /// Upper bound for holding Enter while the correction is being decided.
@@ -631,18 +633,14 @@ public final class EventMonitor {
             clearTransliterationHint()
         }
 
+        // A pause while typing a word keeps it: cutting off its start left the rest to be
+        // judged alone ("ameeting" was never checked), and a word ended after a pause
+        // ("часа." before sending) was never checked at all. Clicks, focus changes and
+        // shortcuts, which can move the caret, reset the session on their own.
         if !inputSession.typedToken.isEmpty,
            let last = lastKeyTime,
            now.timeIntervalSince(last) > ThresholdsConfig.shared.timing.bufferTimeout {
-            if focusedHostCanVerifyText {
-                // The word is checked against the field when it ends: a pause while
-                // typing it must not cut off its start ("ameeting" was never checked).
-                trace.log(.bufferTimeout, fields: ["kept": inputSession.typedToken])
-            } else {
-                trace.log(.bufferTimeout, fields: ["dropped": inputSession.typedToken])
-                inputSession.typedToken = ""
-                boundaryGeneration &+= 1
-            }
+            trace.log(.bufferTimeout, fields: ["kept": inputSession.typedToken])
             keyTimings.removeAll()
         }
 
@@ -656,6 +654,9 @@ public final class EventMonitor {
             if token.isEmpty {
                 if let last = lastCommittedToken {
                     lastCommittedToken = CommittedTokenContext(token: last.token, separator: last.separator + chars)
+                }
+                if let gap = inputSession.charactersAfterPhrase {
+                    inputSession.charactersAfterPhrase = gap + chars.count
                 }
                 return Unmanaged.passUnretained(event)
             }
@@ -763,10 +764,8 @@ public final class EventMonitor {
               inputSession.typedToken.contains(where: \.isLetter) else {
             return false
         }
-        if let lastKeyTime,
-           now.timeIntervalSince(lastKeyTime) > ThresholdsConfig.shared.timing.bufferTimeout {
-            return false
-        }
+        // Also after a pause: the word is kept across it, and is worth checking before
+        // the message goes out.
         return true
     }
 
@@ -863,6 +862,7 @@ public final class EventMonitor {
             inputSession.typedToken.removeLast()
             bumpSessionMutation(at: timeProvider.now)
         } else {
+            erasePhraseContextCharacter()
             inputSession.isDirty = true
             inputSession.lastVerifiedSnapshot = nil
             inputSession.mutationSeq &+= 1
@@ -934,7 +934,6 @@ public final class EventMonitor {
         let canVerifyText = isSyntheticHost
             || (hostProfile.editingEnvironment == .accessibility
                 && focusedCapabilities?.capabilities.supportsFullTextRead == true)
-        focusedHostCanVerifyText = canVerifyText && !isSyntheticHost
         trace.log(
             .boundaryDetected,
             fields: [
@@ -991,7 +990,8 @@ public final class EventMonitor {
                 "hypothesis": planned.result.evidence?.decision.layoutHypothesis.rawValue,
                 "token_kind": planned.result.evidence.map { String(describing: $0.tokenKind) },
                 "margin": planned.result.evidence.map { String(format: "%.3f", $0.winnerMargin) },
-                "phrase": inputSession.phraseContext
+                "phrase": inputSession.phraseContext,
+                "why": planned.trail
             ]
         )
 
@@ -1142,16 +1142,20 @@ public final class EventMonitor {
             defer { endHoldingUserKeys() }
             let transaction = candidate.transaction ?? planned.result.transaction
             let targetLanguage = planned.result.targetLanguage
-            let allowEventReplayFallback =
-                inputSession.typedToken.isEmpty &&
-                !separator.contains(where: { $0.isNewline }) &&
-                hostProfile.allowsAutomaticBlindReplay &&
-                shouldAllowAutomaticReplayFallback(
+            let blindReplayRefusal: String?
+            if !inputSession.typedToken.isEmpty {
+                blindReplayRefusal = "typing_next_word"
+            } else if separator.contains(where: { $0.isNewline }) {
+                blindReplayRefusal = "newline"
+            } else {
+                blindReplayRefusal = automaticReplayFallbackRefusal(
                     for: token + separator,
                     replacement: candidate.replacement,
                     confidence: planned.result.confidence,
                     hostRuntimeProfile: hostProfile
                 )
+            }
+            let allowEventReplayFallback = blindReplayRefusal == nil
 
             // Switch the layout right away, before the text is read back and replaced, so
             // that whatever the user types next already lands in the right layout. If the
@@ -1187,6 +1191,15 @@ public final class EventMonitor {
                 if switchedEarly {
                     revertInputSource(to: layoutBeforeSwitch)
                 }
+                trace.log(
+                    .replacementSkipped,
+                    fields: [
+                        "token": token,
+                        "replacement": candidate.replacement,
+                        "reason": canVerifyText ? "verification_failed" : "text_unreadable",
+                        "blind_replay": blindReplayRefusal
+                    ]
+                )
                 // The word stays as typed: the hotkey must correct it, not "undo" a
                 // correction that never happened (which made it work only on the
                 // second press).
@@ -2240,23 +2253,31 @@ public final class EventMonitor {
         return false
     }
 
-    private func shouldAllowAutomaticReplayFallback(
+    /// Why a word may not be retyped blind where its text can't be read back, or nil if
+    /// it may.
+    private func automaticReplayFallbackRefusal(
         for expectedText: String,
         replacement: String,
         confidence: Double?,
         hostRuntimeProfile: HostRuntimeProfile
-    ) -> Bool {
-        guard !expectedText.isEmpty else { return false }
-        guard hostRuntimeProfile.allowsAutomaticBlindReplay else { return false }
-        guard !inputSession.isDirty, activeSyntheticTransactions == 0 else { return false }
+    ) -> String? {
+        guard !expectedText.isEmpty else { return "empty" }
+        guard hostRuntimeProfile.allowsAutomaticBlindReplay else { return "host_profile" }
+        guard !inputSession.isDirty, activeSyntheticTransactions == 0 else { return "session_dirty" }
         guard timeProvider.now.timeIntervalSince(inputSession.lastMutationAt) <= settings.blindReplayMaxDelay else {
-            return false
+            return "too_late"
         }
 
-        guard let word = Self.blindReplayWord(original: expectedText, replacement: replacement),
-              word.count >= max(1, settings.minAutoCorrectWordLength),
-              word.count <= 18 else {
-            return false
+        guard let word = Self.blindReplayWord(original: expectedText, replacement: replacement) else {
+            return "not_a_word"
+        }
+        // A one-letter Russian word is only ever corrected on its own after a Russian
+        // word ("Прочитай b" → "Прочитай и"), under the default length limit.
+        let minimumLetters = Self.isOneLetterRussianWord(original: word, replacement: replacement)
+            ? 1
+            : max(1, settings.minAutoCorrectWordLength)
+        guard word.count >= minimumLetters, word.count <= 18 else {
+            return "word_length"
         }
 
         let threshold = CorrectionDecisionPolicy.blindAutoApplyThreshold(
@@ -2264,15 +2285,21 @@ public final class EventMonitor {
             limits: settings.autoCorrectionLimits
         )
         guard let confidence, confidence >= threshold else {
-            return false
+            return "confidence"
         }
 
-        return true
+        return nil
+    }
+
+    nonisolated static func isOneLetterRussianWord(original: Substring, replacement: String) -> Bool {
+        original.count == 1
+            && original.allSatisfy(\.isASCII)
+            && CorrectionEngine.singleLetterWords[.russian]?.contains(replacement) == true
     }
 
     /// The word a blind retype replaces, or nil if it isn't one. Its letters are those of
     /// the typed text, or of the replacement when keys that are punctuation on the typed
-    /// layout are letters on the other ("Yf;fk" → "Нажал").
+    /// layout are letters on the other ("Yf;fk" → "Нажал", "Cgfcb,j!" → "Спасибо!").
     nonisolated static func blindReplayWord(original: String, replacement: String) -> Substring? {
         let trimmed = original.trimmingCharacters(in: .whitespacesAndNewlines)
         if let word = CorrectionDecisionPolicy.letterCore(of: trimmed, typedInWrongLayout: true) {
@@ -2280,7 +2307,6 @@ public final class EventMonitor {
         }
         let converted = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let word = CorrectionDecisionPolicy.letterCore(of: converted),
-              word.count == converted.count,
               converted.count == trimmed.count else {
             return nil
         }
@@ -2369,6 +2395,7 @@ public final class EventMonitor {
         if clearPhraseContext {
             inputSession.phraseContext = ""
         }
+        inputSession.charactersAfterPhrase = nil
         inputSession.isDirty = true
         inputSession.lastVerifiedSnapshot = nil
         inputSession.lastMutationAt = timeProvider.now
@@ -2449,6 +2476,7 @@ public final class EventMonitor {
         if clearPhraseContext {
             inputSession.phraseContext = ""
         }
+        inputSession.charactersAfterPhrase = nil
         inputSession.isDirty = true
         inputSession.lastVerifiedSnapshot = nil
         inputSession.lastMutationAt = timeProvider.now
@@ -2509,6 +2537,9 @@ public final class EventMonitor {
             inputSession.phraseContext = ""
         } else if !keepPhraseContext {
             inputSession.phraseContext = seed.phraseContext
+        }
+        if !keepPhraseContext {
+            inputSession.charactersAfterPhrase = nil
         }
         inputSession.sourceApp = seed.sourceApp ?? ""
         inputSession.lastVerifiedSnapshot = snapshot
@@ -2729,6 +2760,8 @@ public final class EventMonitor {
         } else {
             inputSession.phraseContext += " " + word
         }
+        // The word was just ended by its separator.
+        inputSession.charactersAfterPhrase = 1
 
         if inputSession.phraseContext.count > 100 {
             inputSession.phraseContext = String(inputSession.phraseContext.suffix(100))
@@ -2736,6 +2769,26 @@ public final class EventMonitor {
                 inputSession.phraseContext = String(inputSession.phraseContext[inputSession.phraseContext.index(after: firstSpace)...])
             }
         }
+    }
+
+    /// Follows a Backspace that erases text typed before the current word: once it
+    /// reaches a word of the phrase, that word is no longer context ("Прочитай b" with the
+    /// "b" erased and "и" typed instead is "Прочитай и"). Where the session doesn't know
+    /// what lies before the caret (after a click or a paste), the phrase is left as is.
+    private func erasePhraseContextCharacter() {
+        guard let gap = inputSession.charactersAfterPhrase else { return }
+        if gap > 0 {
+            inputSession.charactersAfterPhrase = gap - 1
+            return
+        }
+        var words = inputSession.phraseContext.split(separator: " ").map(String.init)
+        guard let last = words.popLast() else {
+            inputSession.charactersAfterPhrase = nil
+            return
+        }
+        inputSession.phraseContext = words.joined(separator: " ")
+        // Its other letters, and the space before it, are still in the field.
+        inputSession.charactersAfterPhrase = last.count - 1 + (words.isEmpty ? 0 : 1)
     }
 
     private func updateObservedAXApp() {
