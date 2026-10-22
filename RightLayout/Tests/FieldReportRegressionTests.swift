@@ -235,7 +235,9 @@ final class FieldReportRegressionTests: XCTestCase {
             settings.isLearningEnabled = true
             return saved
         }
-        for (typed, expected) in [("\"nj", "Это"), ("Cgfcb,j!", "Спасибо!")] {
+        // As in the report: "Cgfcb,j!" was corrected to Russian just before "\"nj", so the
+        // history's last language is Russian for the second word.
+        for (typed, expected) in [("\"nj", "Это"), ("Cgfcb,j!", "Спасибо!"), ("\"nj", "Это")] {
             let planned = await engine.planCorrection(typed, editingEnvironment: .nonAccessibility)
             guard case .autoReplace(let candidate) = planned.plan else {
                 XCTFail("\(typed): expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
