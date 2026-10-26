@@ -164,6 +164,55 @@ final class LaggingHostRegressionTests: XCTestCase {
         XCTAssertEqual(seed?.phraseContext, "Hello Anya, You can")
     }
 
+    // MARK: The session's text differs from the field's further back
+
+    // From two Slack reports: after a paste, the session took the pasted text and the
+    // next word as one ("accountHerfvb", "…/timelinePffghedmnt") where Slack showed a
+    // space between them. The lag was then missed, and the field's word was read from
+    // the stale caret without its last letters: the hotkey turned "Herfvb " into
+    // "HeРукам" and "gj;fkeqcnf" into "gпожалуйст".
+
+    func testSeedingFindsTheRealCaretAfterAGluedWord() {
+        let text = "правами и доверием management account Herfvb "
+        let seed = FocusedTextContextService.seedSession(from: snapshot(text, caret: length(text) - 2), typedTail: "accountHerfvb ")
+        XCTAssertEqual(seed?.typedToken, "", "Not \"Herfv\": the caret was two characters behind")
+    }
+
+    func testSeedingFindsTheRealCaretAfterAPastedLink() {
+        let text = "который просил @dariusz.piechota. jetbrains.team/p/clouds/…/timeline Pffghedmnt "
+        let seed = FocusedTextContextService.seedSession(
+            from: snapshot(text, caret: length(text) - 1),
+            typedTail: "jetbrains.team/p/clouds/…/timelinePffghedmnt "
+        )
+        XCTAssertEqual(seed?.typedToken, "", "Not \"Pffghedmnt\", which the next word was then glued to")
+    }
+
+    func testFieldBehindAGluedWordLagsBehind() {
+        XCTAssertTrue(FocusedTextContextService.lagsBehind(snapshot("management account Herfv"), typedTail: "accountHerfvb "))
+    }
+
+    func testMismatchAtALaggingCaretTakesTheWholeWord() {
+        // selection={360, 0}/361, word_before_caret=gj;fkeqcn
+        let text = "jetbrains.team/p/clouds/…/timeline Pffghedmnt gj;fkeqcnf"
+        let end = length(text)
+        guard case .mismatch(let snapshot?, let seed?) = FocusedTextContextService.verifyExpectedSuffix(
+            "Pffghedmntgj;fkeqcnf",
+            in: snapshot(text, caret: end - 1)
+        ) else {
+            return XCTFail("Glued words aren't in the field")
+        }
+        XCTAssertEqual(seed.typedToken, "gj;fkeqcnf")
+        XCTAssertEqual(snapshot.selectedRange, NSRange(location: end, length: 0))
+
+        guard case .verified(let context) = FocusedTextContextService.verifyExpectedSuffix(
+            seed.typedToken,
+            in: self.snapshot(text, caret: end - 1)
+        ) else {
+            return XCTFail("The field's word verifies")
+        }
+        XCTAssertEqual(NSMaxRange(context.verifiedRange), end)
+    }
+
     func testSeedingFromChangedTextTakesTheField() {
         // An app's autocomplete replaced what was typed: the field is right.
         let seed = FocusedTextContextService.seedSession(from: snapshot("@Andrey.Kopysov"), typedTail: "@kopy")

@@ -403,15 +403,26 @@ package final class FocusedTextContextService {
     /// How many of the last typed characters a host may not show yet.
     nonisolated package static let maxTextLag = 4
 
+    /// How much of what was just typed is compared with the end of the field to tell a
+    /// lagging host. Only the end: further back the session's idea of the text can differ
+    /// from the field's without the caret being wrong, e.g. after a paste Slack added a
+    /// space to ("…/timeline" + "Pffghedmnt" was one word to the session).
+    nonisolated package static let lagEvidenceLength = maxTextLag + 3
+
+    nonisolated private static func recentTail(_ typedTail: String) -> String {
+        String(typedTail.suffix(lagEvidenceLength))
+    }
+
     /// Slack (Chromium) can report the caret a character or two behind the text it
-    /// shows, for seconds in a long message ("Скуысуте|Ж"). When the field ends with
-    /// `typedTail`, text the user has just typed there, and the caret is inside it, the
-    /// caret is really at the end of the text: returns that location.
+    /// shows, for seconds in a long message ("Скуысуте|Ж"). When the field ends with the
+    /// end of `typedTail`, text the user has just typed there, and the caret is inside
+    /// it, the caret is really at the end of the text: returns that location.
     nonisolated package static func laggingCaretLocation(
         fullText: String,
         selection: NSRange,
         typedTail: String
     ) -> Int? {
+        let typedTail = recentTail(typedTail)
         let length = (fullText as NSString).length
         let tailLength = typedTail.utf16.count
         guard selection.length == 0,
@@ -431,7 +442,7 @@ package final class FocusedTextContextService {
     nonisolated package static func lagsBehind(_ snapshot: FocusedTextSnapshot, typedTail: String) -> Bool {
         guard snapshot.selectedRange.length == 0 else { return false }
         let beforeCaret = comparable(prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location))
-        let tail = Array(comparable(typedTail))
+        let tail = Array(comparable(recentTail(typedTail)))
         guard tail.count > 1, !beforeCaret.hasSuffix(String(tail)) else { return false }
         // One shared letter is no evidence, unless the tail is a letter and a separator.
         let shortest = max(min(2, tail.count - 1), tail.count - maxTextLag)
@@ -444,7 +455,10 @@ package final class FocusedTextContextService {
     }
 
     /// Runs `check`; if it fails and the caret lags behind one of `typedTails` at the end
-    /// of the text, runs it again with the caret at the end.
+    /// of the text, runs it again with the caret at the end. A mismatch then comes with
+    /// the field's word at the real caret: the one at the reported caret lacked its last
+    /// letters, and converting it left them behind ("gj;fkeqcn" for "gj;fkeqcnf", retyped
+    /// from the end, became "gпожалуйст").
     nonisolated private static func verifyAllowingCaretLag(
         _ snapshot: FocusedTextSnapshot,
         typedTails: [String],
@@ -452,17 +466,20 @@ package final class FocusedTextContextService {
     ) -> SessionSyncResult {
         let result = check(snapshot)
         guard case .mismatch = result else { return result }
+        var laggingMismatch: SessionSyncResult?
         for tail in typedTails {
             guard let caret = laggingCaretLocation(
                 fullText: snapshot.fullText,
                 selection: snapshot.selectedRange,
                 typedTail: tail
             ) else { continue }
-            if case .verified(let context) = check(snapshot.withCaret(at: caret)) {
-                return .verified(context)
+            let atCaret = check(snapshot.withCaret(at: caret))
+            if case .verified = atCaret {
+                return atCaret
             }
+            laggingMismatch = laggingMismatch ?? atCaret
         }
-        return result
+        return laggingMismatch ?? result
     }
 
     private func focusedElement() -> AXUIElement? {
