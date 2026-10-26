@@ -103,7 +103,7 @@ jobs:
 
           gh release create "$TAG" "$DMG_PATH" \
             --repo "$RELEASES_REPO" \
-            --title "RightLayout SergeyZh $TAG" \
+            --title "$TAG" \
             --notes-file "$NOTES_PATH"
           
           echo "✅ Published to https://github.com/$RELEASES_REPO/releases/tag/$TAG"
