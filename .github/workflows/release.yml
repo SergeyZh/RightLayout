@@ -11,6 +11,7 @@ jobs:
     environment: release
     permissions:
       contents: write
+      pull-requests: read
     
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -26,6 +27,22 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Building version: $VERSION"
       
+      # From the "Release notes" sections of the pull requests merged since the last
+      # release (scripts/release_notes.py). Before tagging, so the last tag is that release's.
+      - name: Write release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREVIOUS=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          echo "Changes since ${PREVIOUS:-the first commit}"
+          git rev-list ${PREVIOUS:+"$PREVIOUS"..}HEAD > "$RUNNER_TEMP/commits.txt"
+          gh pr list --repo "$GITHUB_REPOSITORY" --state merged --base main --limit 200 \
+            --json number,title,body,labels,mergeCommit,url > "$RUNNER_TEMP/prs.json"
+          python3 scripts/release_notes.py --prs "$RUNNER_TEMP/prs.json" \
+            --commits "$RUNNER_TEMP/commits.txt" --notes-dir releases/notes > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+          echo "NOTES_PATH=$RUNNER_TEMP/notes.md" >> "$GITHUB_ENV"
+
       - name: Import signing certificate
         env:
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
@@ -83,19 +100,11 @@ jobs:
           TAG="v$VERSION"
           DMG_PATH="releases/RightLayout-SergeyZh-$VERSION.dmg"
           RELEASES_REPO="SergeyZh/RightLayout"
-          # Tags are build times, so notes for the coming release live in next.md.
-          NOTES_PATH="releases/notes/next.md"
 
-          if [ -f "$NOTES_PATH" ]; then
-            NOTES_ARGS=(--notes-file "$NOTES_PATH")
-          else
-            NOTES_ARGS=(--notes "RightLayout SergeyZh $TAG — SergeyZh's build of RightLayout (a fork of chernistry/RightLayout, not the official app). Download the DMG and drag the app to Applications. macOS 13.0+ required.")
-          fi
-          
           gh release create "$TAG" "$DMG_PATH" \
             --repo "$RELEASES_REPO" \
             --title "RightLayout SergeyZh $TAG" \
-            "${NOTES_ARGS[@]}"
+            --notes-file "$NOTES_PATH"
           
           echo "✅ Published to https://github.com/$RELEASES_REPO/releases/tag/$TAG"
 
