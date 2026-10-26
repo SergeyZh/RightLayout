@@ -43,8 +43,18 @@ public struct MenuBarView: View {
 
             if !snapshot.issues.isEmpty {
                 ForEach(snapshot.issues.prefix(2)) { issue in
-                    Text(issue.title)
-                        .foregroundStyle(issue.severity == .critical ? .red : .secondary)
+                    if issue.isSecureInput {
+                        // A button, so the menu doesn't grey it out like the other lines.
+                        Button {
+                            showSecureInputOwner()
+                        } label: {
+                            Label(issue.title, systemImage: "lock.fill")
+                        }
+                        .help(secureInputButtonHelp)
+                    } else {
+                        Text(issue.title)
+                            .foregroundStyle(issue.severity == .critical ? .red : .secondary)
+                    }
                 }
             }
 
@@ -195,6 +205,19 @@ public struct MenuBarView: View {
         navigation.open(pane, diagnosticsTab: diagnosticsTab)
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "settings")
+    }
+
+    private var secureInputButtonHelp: String {
+        guard let owner = secureInput.state.owner else { return UIStrings.text("Open Control Center…") }
+        return UIStrings.format("Bring %@ to the front", owner.name)
+    }
+
+    /// Brings forward the app holding secure input, to leave its password field;
+    /// without one, Control Center explains what to do.
+    private func showSecureInputOwner() {
+        if !secureInput.showOwner() {
+            openSettings(at: .overview)
+        }
     }
 
     private func applySuggestedLanguage(_ suggestion: String) {

@@ -489,3 +489,4 @@
 "Secure input is on" = "Защищённый ввод включён";
 "macOS hides typing from RightLayout while an app has secure input on, usually for a password field. Leave the field or quit the app." = "Пока какая-то программа держит защищённый ввод (обычно для поля пароля), macOS скрывает от RightLayout набор текста. Уйдите из этого поля или закройте программу.";
 "Secure input is on: macOS hides typing from RightLayout." = "Включён защищённый ввод: macOS скрывает набор текста от RightLayout.";
+"Bring %@ to the front" = "Переключиться на %@";

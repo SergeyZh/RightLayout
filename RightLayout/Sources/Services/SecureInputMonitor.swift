@@ -64,6 +64,25 @@ public final class SecureInputMonitor: ObservableObject {
         timer = nil
     }
 
+    /// Brings the app holding secure input to the front, so its password field can be
+    /// left. False when it isn't known.
+    @discardableResult
+    public func showOwner() -> Bool {
+        guard let owner = state.owner else { return false }
+        let running = owner.bundleId.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }
+            ?? NSRunningApplication(processIdentifier: owner.pid)
+        guard let url = running?.bundleURL
+            ?? owner.bundleId.flatMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }) else {
+            return false
+        }
+        // Opening a running app brings it forward; activate() may be refused to an
+        // app that isn't frontmost.
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        return true
+    }
+
     func refresh() {
         guard IsSecureEventInputEnabled() else {
             if state.isActive {

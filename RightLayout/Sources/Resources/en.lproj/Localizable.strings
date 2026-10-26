@@ -489,3 +489,4 @@
 "Secure input is on" = "Secure input is on";
 "macOS hides typing from RightLayout while an app has secure input on, usually for a password field. Leave the field or quit the app." = "macOS hides typing from RightLayout while an app has secure input on, usually for a password field. Leave the field or quit the app.";
 "Secure input is on: macOS hides typing from RightLayout." = "Secure input is on: macOS hides typing from RightLayout.";
+"Bring %@ to the front" = "Bring %@ to the front";
