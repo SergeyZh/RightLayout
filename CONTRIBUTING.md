@@ -218,6 +218,23 @@ instruments -t "Time Profiler" .build/release/RightLayout
 7. **Push**: `git push origin feature/my-feature`
 8. **Create PR**: Describe changes clearly
 
+### Release Notes
+
+Release notes are made from the pull requests merged since the last release
+(`scripts/release_notes.py`). Say in the PR's "Release notes" section what users get,
+in English and Russian, one pair per item:
+
+```
+## Release notes
+
+EN: Show when secure input hides typing, and which app holds it.
+RU: Показывать, когда защищённый ввод скрывает набор текста и какая программа его держит.
+```
+
+`EN: none` or the `skip-release-notes` label leaves a PR out (CI, refactoring); without
+the section, the PR title stands in. The header above the changes is in
+`releases/notes/header.en.md` and `header.ru.md`.
+
 ### PR Checklist
 
 - [ ] Code follows style guide
