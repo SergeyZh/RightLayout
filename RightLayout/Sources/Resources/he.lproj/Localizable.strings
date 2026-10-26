@@ -360,3 +360,9 @@
 "Corrections become suggestions" = "תיקונים הופכים להצעות";
 "No effect" = "ללא השפעה";
 "%d patterns" = "%d דפוסים";
+"Secure input is on in %@. RightLayout can't see typing." = "קלט מאובטח מופעל ב-%@. RightLayout לא רואה את ההקלדה.";
+"Secure input is on. RightLayout can't see typing." = "קלט מאובטח מופעל. RightLayout לא רואה את ההקלדה.";
+"Secure input is on in %@" = "קלט מאובטח מופעל ב-%@";
+"Secure input is on" = "קלט מאובטח מופעל";
+"macOS hides typing from RightLayout while an app has secure input on, usually for a password field. Leave the field or quit the app." = "כל עוד יישום מחזיק קלט מאובטח, בדרך כלל עבור שדה סיסמה, macOS מסתיר את ההקלדה מ-RightLayout. צאו מהשדה או סגרו את היישום.";
+"Secure input is on: macOS hides typing from RightLayout." = "קלט מאובטח מופעל: macOS מסתיר את ההקלדה מ-RightLayout.";

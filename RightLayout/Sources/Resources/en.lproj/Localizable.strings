@@ -483,3 +483,9 @@
 "Corrections become suggestions" = "Corrections become suggestions";
 "No effect" = "No effect";
 "%d patterns" = "%d patterns";
+"Secure input is on in %@. RightLayout can't see typing." = "Secure input is on in %@. RightLayout can't see typing.";
+"Secure input is on. RightLayout can't see typing." = "Secure input is on. RightLayout can't see typing.";
+"Secure input is on in %@" = "Secure input is on in %@";
+"Secure input is on" = "Secure input is on";
+"macOS hides typing from RightLayout while an app has secure input on, usually for a password field. Leave the field or quit the app." = "macOS hides typing from RightLayout while an app has secure input on, usually for a password field. Leave the field or quit the app.";
+"Secure input is on: macOS hides typing from RightLayout." = "Secure input is on: macOS hides typing from RightLayout.";

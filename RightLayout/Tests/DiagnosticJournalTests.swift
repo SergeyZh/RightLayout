@@ -50,6 +50,7 @@ final class DiagnosticJournalTests: XCTestCase {
         let report = ProblemReport.make()
         XCTAssertTrue(report.contains("Working languages:"))
         XCTAssertTrue(report.contains("Layouts:"))
+        XCTAssertTrue(report.contains("Secure input: "))
         XCTAssertTrue(report.contains("Applied ghbdtn conf=90%"))
         XCTAssertTrue(report.contains("TRACE plan_ready token=ghbdtn"))
     }

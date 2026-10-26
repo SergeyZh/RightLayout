@@ -4,6 +4,7 @@ import os
 import UserNotifications
 import Carbon
 import ApplicationServices
+import Combine
 import RightLayout
 
 extension Logger {
@@ -32,10 +33,12 @@ struct RightLayoutApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra(AppIdentity.displayName, systemImage: "keyboard") {
+        MenuBarExtra {
             MenuBarView()
                 .environment(\.locale, settings.appLanguage.locale ?? .current)
                 .id(settings.appLanguage) // Force recreation on language change
+        } label: {
+            MenuBarIcon()
         }
         .menuBarExtraStyle(.menu)
         
@@ -82,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var updateCheckTimer: Timer?
     private var permissionWindowController: NSWindowController?
     private var proactiveHintObserver: Any?
+    private var secureInputObserver: AnyCancellable?
     private var isHandlingPermissionGrant = false
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -146,10 +150,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Ticket 53: Proactive layout hints (hint-first).
         setupProactiveHints()
+
+        setupSecureInputMonitoring()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
         eventMonitor?.stop()
+        SecureInputMonitor.shared.stop()
         updateCheckTimer?.invalidate()
         permissionWindowController?.close()
         if let observer = proactiveHintObserver {
@@ -230,6 +237,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? relaunch.run()
         }
         NSApp.terminate(nil)
+    }
+
+    // MARK: - Secure Input
+
+    /// The menu bar icon is crossed out while secure input is on; hovering it names the
+    /// app that turned it on.
+    private func setupSecureInputMonitoring() {
+        let monitor = SecureInputMonitor.shared
+        secureInputObserver = monitor.$state
+            .removeDuplicates()
+            .sink { state in
+                MenuBarStatusItem.setToolTip(state.menuBarToolTip)
+            }
+        monitor.start()
     }
 
     // MARK: - Proactive Hints
