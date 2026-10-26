@@ -204,6 +204,7 @@ package enum RuntimeTraceEvent: String, Sendable {
     case keyTyped = "key_typed"
     case backspace = "backspace"
     case bufferTimeout = "buffer_timeout"
+    case secureInputChanged = "secure_input_changed"
 }
 
 package final class RuntimeTraceLogger: @unchecked Sendable {

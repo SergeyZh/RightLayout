@@ -113,6 +113,7 @@ struct AppStatusSnapshot {
         let activeLayouts: [String: String]
         let excludedAppsCount: Int
         let recentCorrectionDescription: String?
+        var secureInput: SecureInputMonitor.State = .off
     }
 
     let runtimeTitle: String
@@ -131,6 +132,18 @@ struct AppStatusSnapshot {
                 AppStatusIssue(
                     title: UIStrings.text("Accessibility required"),
                     message: UIStrings.text("Text correction is blocked until Accessibility access is granted in System Settings."),
+                    severity: .critical
+                )
+            )
+        }
+
+        if source.secureInput.isActive {
+            let title = source.secureInput.owner.map { UIStrings.format("Secure input is on in %@", $0.name) }
+                ?? UIStrings.text("Secure input is on")
+            issues.append(
+                AppStatusIssue(
+                    title: title,
+                    message: UIStrings.text("macOS hides typing from RightLayout while an app has secure input on, usually for a password field. Leave the field or quit the app."),
                     severity: .critical
                 )
             )
@@ -174,6 +187,9 @@ struct AppStatusSnapshot {
         } else if !source.isEnabled {
             runtimeTitle = UIStrings.text("Paused")
             runtimeMessage = UIStrings.text("Runtime is healthy but automatic correction is paused.")
+        } else if source.secureInput.isActive {
+            runtimeTitle = UIStrings.text("Blocked")
+            runtimeMessage = UIStrings.text("Secure input is on: macOS hides typing from RightLayout.")
         } else {
             runtimeTitle = UIStrings.text("Ready")
             runtimeMessage = UIStrings.text("Monitoring keyboard input and correcting supported text fields.")
@@ -207,6 +223,7 @@ extension AppStatusSnapshot.Source {
         settings: SettingsManager = .shared,
         updateState: UpdateState = .shared,
         history: HistoryManager = .shared,
+        secureInput: SecureInputMonitor = .shared,
         hasAccessibilityPermission: Bool
     ) {
         let recentCorrectionDescription = history.records.first.map { record in
@@ -223,7 +240,8 @@ extension AppStatusSnapshot.Source {
             preferredLanguageTitle: settings.preferredLanguage.shortName,
             activeLayouts: settings.activeLayouts,
             excludedAppsCount: settings.excludedApps.count,
-            recentCorrectionDescription: recentCorrectionDescription
+            recentCorrectionDescription: recentCorrectionDescription,
+            secureInput: secureInput.state
         )
     }
 }

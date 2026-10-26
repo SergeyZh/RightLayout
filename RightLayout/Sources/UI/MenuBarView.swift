@@ -6,6 +6,7 @@ public struct MenuBarView: View {
     @StateObject private var history = HistoryManager.shared
     @ObservedObject private var updateState = UpdateState.shared
     @ObservedObject private var navigation = SettingsNavigationState.shared
+    @ObservedObject private var secureInput = SecureInputMonitor.shared
     @Environment(\.openWindow) private var openWindow
 
     @State private var suggestedLanguage: String? = nil
@@ -26,6 +27,7 @@ public struct MenuBarView: View {
                 settings: settings,
                 updateState: updateState,
                 history: history,
+                secureInput: secureInput,
                 hasAccessibilityPermission: hasAccessibilityPermission
             )
         )
