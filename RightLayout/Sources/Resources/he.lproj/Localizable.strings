@@ -366,3 +366,4 @@
 "Secure input is on" = "קלט מאובטח מופעל";
 "macOS hides typing from RightLayout while an app has secure input on, usually for a password field. Leave the field or quit the app." = "כל עוד יישום מחזיק קלט מאובטח, בדרך כלל עבור שדה סיסמה, macOS מסתיר את ההקלדה מ-RightLayout. צאו מהשדה או סגרו את היישום.";
 "Secure input is on: macOS hides typing from RightLayout." = "קלט מאובטח מופעל: macOS מסתיר את ההקלדה מ-RightLayout.";
+"Bring %@ to the front" = "העבר את %@ לחזית";

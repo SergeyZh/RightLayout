@@ -99,6 +99,8 @@ struct AppStatusIssue: Identifiable, Hashable {
     let title: String
     let message: String
     let severity: Severity
+    /// The menu shows it as a button that brings the app holding secure input forward.
+    var isSecureInput = false
 }
 
 struct AppStatusSnapshot {
@@ -144,7 +146,8 @@ struct AppStatusSnapshot {
                 AppStatusIssue(
                     title: title,
                     message: UIStrings.text("macOS hides typing from RightLayout while an app has secure input on, usually for a password field. Leave the field or quit the app."),
-                    severity: .critical
+                    severity: .critical,
+                    isSecureInput: true
                 )
             )
         }

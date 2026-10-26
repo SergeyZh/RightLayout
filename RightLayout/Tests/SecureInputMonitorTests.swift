@@ -57,6 +57,7 @@ final class SecureInputMonitorTests: XCTestCase {
         let snapshot = AppStatusSnapshot.build(from: source)
 
         XCTAssertEqual(snapshot.issues.first?.severity, .critical)
+        XCTAssertEqual(snapshot.issues.first?.isSecureInput, true, "The menu shows it as a button")
         XCTAssertTrue(snapshot.issues.first?.title.contains("Google Chrome") == true)
         XCTAssertEqual(snapshot.runtimeTitle, UIStrings.text("Blocked"))
     }
