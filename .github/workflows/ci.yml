@@ -12,7 +12,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A rebase or fast-forward merge puts on main the very files a pull request (or a run
+  # on its branch) already built and tested. Find such a run so main doesn't wait for a
+  # macOS runner to do it again; a merge that brings anything else changes the tree.
+  already-tested:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      commit: ${{ steps.find.outputs.commit }}
+    steps:
+      - name: Find a passed run of the same tree
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$GITHUB_SHA" --jq .tree.sha)
+          for sha in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?status=success&per_page=30" --jq '.workflow_runs[].head_sha' | sort -u); do
+            [ "$sha" != "$GITHUB_SHA" ] || continue
+            if [ "$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$sha" --jq .tree.sha 2>/dev/null)" = "$tree" ]; then
+              echo "Tree $tree already passed in $sha; skipping the build"
+              echo "commit=$sha" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "No passed run of tree $tree"
+
   build-and-test:
+    needs: already-tested
+    # Also runs when the lookup is skipped (pull requests) or fails.
+    if: ${{ !cancelled() && needs.already-tested.outputs.commit == '' }}
     runs-on: macos-26
     timeout-minutes: 30
 
