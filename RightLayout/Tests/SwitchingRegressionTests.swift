@@ -124,11 +124,16 @@ final class SwitchingRegressionTests: XCTestCase {
         }
     }
 
-    func testBareAbbreviationIsStillLeftForContext() async {
-        // "lf" alone is a valid English abbreviation; only the punctuation gives it away.
-        let planned = await engine.planCorrection("Lf", editingEnvironment: .accessibility)
-        if case .autoReplace(let candidate) = planned.plan {
-            XCTFail("Lf was replaced with \(candidate.replacement)")
+    func testBareCapitalizedWordIsCorrectedLikeTheLowercaseOne() async {
+        // macOS's spell checker takes any capitalized short word for English ("Lf", "Yj"),
+        // though not the same word in lowercase.
+        for (typed, expected) in [("lf", "да"), ("Lf", "Да")] {
+            let planned = await engine.planCorrection(typed, editingEnvironment: .accessibility)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("\(typed) was not auto-corrected: \(String(describing: planned.plan))")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, expected)
         }
     }
 
