@@ -295,4 +295,107 @@ final class FieldReportRegressionTests: XCTestCase {
             }
         }
     }
+
+    // MARK: "Yj", "Z" and "E" starting a sentence were left as typed
+
+    func testCapitalizedShortWordIsCorrectedLikeTheLowercaseOne() async {
+        await MainActor.run {
+            SettingsManager.shared.customEnabledLanguages = [.english, .russian]
+            SettingsManager.shared.minAutoCorrectWordLength = AutoCorrectionLimits.default.minimumWordLength
+        }
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            for (typed, expected) in [("yj", "но"), ("Yj", "Но")] {
+                let planned = await engine.planCorrection(typed, editingEnvironment: environment)
+                guard case .autoReplace(let candidate) = planned.plan else {
+                    XCTFail("\(typed) (\(environment)): expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+                    continue
+                }
+                XCTAssertEqual(candidate.replacement, expected)
+            }
+        }
+        XCTAssertEqual(ConfidenceRouter.lowercasedCapitalizedShortWord("Yj"), "yj")
+        for token in ["YJ", "yJ", "yj", "Y", "Yjnj", "Y1"] {
+            XCTAssertNil(ConfidenceRouter.lowercasedCapitalizedShortWord(token), token)
+        }
+    }
+
+    func testCapitalizedEnglishWordsStayEnglish() async {
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
+        for word in ["Vs", "Ok", "No", "The", "Yes", "Hi"] {
+            let planned = await engine.planCorrection(word, editingEnvironment: .accessibility)
+            if case .autoReplace(let candidate) = planned.plan {
+                XCTFail("\(word) was replaced with \(candidate.replacement)")
+            }
+        }
+    }
+
+    func testCapitalOneLetterRussianWordStartingTheText() async {
+        let saved = await MainActor.run { () -> (Int, Language) in
+            let settings = SettingsManager.shared
+            let saved = (settings.minAutoCorrectWordLength, settings.preferredLanguage)
+            settings.customEnabledLanguages = [.english, .russian]
+            settings.minAutoCorrectWordLength = 1
+            settings.preferredLanguage = .russian
+            return saved
+        }
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            for (typed, expected) in [("Z", "Я"), ("E", "У"), ("D", "В")] {
+                let planned = await engine.planCorrection(typed, phraseBuffer: "", editingEnvironment: environment)
+                guard case .autoReplace(let candidate) = planned.plan else {
+                    XCTFail("\(typed) (\(environment)): expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+                    continue
+                }
+                XCTAssertEqual(candidate.replacement, expected)
+                XCTAssertEqual(planned.result.targetLanguage, .russian)
+            }
+            // English one-letter words, and lowercase letters that may be anything.
+            for typed in ["I", "A", "z", "e"] {
+                let planned = await engine.planCorrection(typed, phraseBuffer: "", editingEnvironment: environment)
+                if case .autoReplace(let candidate) = planned.plan {
+                    XCTFail("\(typed) (\(environment)) was replaced with \(candidate.replacement)")
+                }
+            }
+        }
+        XCTAssertTrue(EventMonitor.isOneLetterRussianWord(original: "Z", replacement: "Я"))
+
+        // Without the preference, or with the default length limit, nothing says the
+        // letter is Russian.
+        for (length, preferred) in [(1, Language.english), (AutoCorrectionLimits.default.minimumWordLength, .russian)] {
+            await MainActor.run {
+                SettingsManager.shared.minAutoCorrectWordLength = length
+                SettingsManager.shared.preferredLanguage = preferred
+            }
+            let planned = await engine.planCorrection("Z", phraseBuffer: "", editingEnvironment: .accessibility)
+            if case .autoReplace(let candidate) = planned.plan {
+                XCTFail("Z (length \(length), preferred \(preferred)) was replaced with \(candidate.replacement)")
+            }
+        }
+
+        await MainActor.run {
+            SettingsManager.shared.minAutoCorrectWordLength = saved.0
+            SettingsManager.shared.preferredLanguage = saved.1
+        }
+    }
+
+    func testCapitalOneLetterRussianWordStartingASentenceAfterARussianOne() async {
+        await MainActor.run {
+            SettingsManager.shared.customEnabledLanguages = [.english, .russian]
+            SettingsManager.shared.minAutoCorrectWordLength = AutoCorrectionLimits.default.minimumWordLength
+        }
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            let planned = await engine.planCorrection("Z", phraseBuffer: "Привет.", editingEnvironment: environment)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("Z (\(environment)): expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, "Я")
+        }
+        // Inside a sentence a capital letter is meant: "поколение Z", "витамин E".
+        for (typed, phrase) in [("Z", "поколение"), ("E", "витамин"), ("Z", "Hello.")] {
+            let planned = await engine.planCorrection(typed, phraseBuffer: phrase, editingEnvironment: .accessibility)
+            if case .autoReplace(let candidate) = planned.plan {
+                XCTFail("\(typed) after \"\(phrase)\" was replaced with \(candidate.replacement)")
+            }
+        }
+    }
 }

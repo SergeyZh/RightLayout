@@ -80,6 +80,19 @@ actor ConfidenceRouter {
         let enabledLanguages = await settings.enabledLanguages
         var decision = await route(token: token, context: context, mode: mode)
 
+        // A short word starting a sentence is decided like the same word in lowercase:
+        // "yj" became "но" while "Yj" was kept, the capital made it pass for an English
+        // name or abbreviation. The conversion keeps the capital ("Yj" → "Но").
+        if mode == .automatic,
+           !decision.layoutHypothesis.rawValue.contains("_from_"),
+           let lowercased = Self.lowercasedCapitalizedShortWord(token) {
+            let lowered = await route(token: lowercased, context: context, mode: mode)
+            if lowered.layoutHypothesis.rawValue.contains("_from_") {
+                DecisionLogger.shared.logDecision(token: token, path: "CAPITALIZED_AS_LOWERCASE", result: lowered)
+                decision = lowered
+            }
+        }
+
         var kind = tokenKind(for: token)
         let fallbackCandidate = scoredDecision(
             token: token,
@@ -139,6 +152,18 @@ actor ConfidenceRouter {
             isCorrection: decision.layoutHypothesis.rawValue.contains("_from_"),
             isWhitelistedShort: isWhitelistedShort
         )
+    }
+
+    /// `token` in lowercase if it is a word of two or three letters with only its first
+    /// one a capital ("Yj", not "YJ" or "yJ"), otherwise nil.
+    static func lowercasedCapitalizedShortWord(_ token: String) -> String? {
+        guard (2...3).contains(token.count),
+              token.allSatisfy(\.isLetter),
+              let first = token.first, first.isUppercase,
+              token.dropFirst().allSatisfy(\.isLowercase) else {
+            return nil
+        }
+        return token.lowercased()
     }
 
     /// A Latin word ending in a key that is sentence punctuation only on the Russian
