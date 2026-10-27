@@ -2270,8 +2270,9 @@ public final class EventMonitor {
         guard let word = Self.blindReplayWord(original: expectedText, replacement: replacement) else {
             return "not_a_word"
         }
-        // A one-letter Russian word is only ever corrected on its own after a Russian
-        // word ("Прочитай b" → "Прочитай и"), under the default length limit.
+        // A one-letter Russian word is only corrected on its own where the engine has
+        // a reason ("Прочитай b" → "Прочитай и", "Привет. Z" → "Привет. Я"), under the
+        // default length limit.
         let minimumLetters = Self.isOneLetterRussianWord(original: word, replacement: replacement)
             ? 1
             : max(1, settings.minAutoCorrectWordLength)
@@ -2293,7 +2294,7 @@ public final class EventMonitor {
     nonisolated static func isOneLetterRussianWord(original: Substring, replacement: String) -> Bool {
         original.count == 1
             && original.allSatisfy(\.isASCII)
-            && CorrectionEngine.singleLetterWords[.russian]?.contains(replacement) == true
+            && CorrectionEngine.singleLetterWords[.russian]?.contains(replacement.lowercased()) == true
     }
 
     /// The word a blind retype replaces, or nil if it isn't one. Its letters are those of

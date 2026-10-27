@@ -90,8 +90,8 @@ extension CorrectionEngine {
             return shorthand
         }
 
-        if let letter = await singleLetterAfterRussianPhrase(text, phraseBuffer: phraseBuffer) {
-            DecisionTrail.note("single_letter_after_ru")
+        if let letter = await singleRussianLetterWord(text, phraseBuffer: phraseBuffer) {
+            DecisionTrail.note("single_letter_ru")
             return letter
         }
 
@@ -1114,23 +1114,29 @@ extension CorrectionEngine {
         )
     }
 
-    /// A lone lowercase Latin letter right after a Russian word is a Russian one-letter
-    /// word typed on the English layout: "Прочитай b" is "Прочитай и" (the layout was
-    /// switched for an "@" and not back). No English word is a single "b", so it is
-    /// corrected now, and the layout switched before the next word, rather than left for
-    /// the next word to confirm.
+    /// A lone Latin letter that is a Russian one-letter word typed on the English layout:
+    ///
+    /// - lowercase, right after a Russian word: "Прочитай b" is "Прочитай и" (the layout
+    ///   was switched for an "@" and not back);
+    /// - capital, starting a sentence after a Russian one: "Привет. Z" is "Привет. Я";
+    /// - capital, starting the text, when Russian is the preferred language and the
+    ///   minimum word length is one letter: "Z" is "Я", "E" is "У".
+    ///
+    /// No English word is a single "b", "z" or "e", so it is corrected now, and the layout
+    /// switched before the next word, rather than left for the next word to confirm. A
+    /// capital letter inside a sentence is left alone: "план B", "витамин E".
     ///
     /// Only with the default minimum word length (or a shorter one) and outside the
     /// conservative preset.
-    func singleLetterAfterRussianPhrase(_ text: String, phraseBuffer: String) async -> CorrectionResult? {
+    func singleRussianLetterWord(_ text: String, phraseBuffer: String) async -> CorrectionResult? {
         guard text.count == 1,
               let letter = text.first,
-              letter.isASCII, letter.isLetter, letter.isLowercase,
-              Self.singleLetterWords[.english]?.contains(text) == false,
-              let previous = phraseBuffer.split(separator: " ").last,
-              Self.isRussianWord(String(previous)) else {
+              letter.isASCII, letter.isLetter,
+              Self.singleLetterWords[.english]?.contains(text.lowercased()) == false else {
             return nil
         }
+        let previous = phraseBuffer.split(separator: " ").last.map(String.init)
+        let followsRussianWord = previous.map(Self.isRussianWord) ?? false
         let preset = await settings.behaviorPreset
         let limits = await settings.autoCorrectionLimits
         let enabled = await settings.enabledLanguages
@@ -1139,12 +1145,20 @@ extension CorrectionEngine {
               enabled.contains(.russian), enabled.contains(.english) else {
             return nil
         }
+        if letter.isLowercase {
+            guard followsRussianWord else { return nil }
+        } else if let previous {
+            guard followsRussianWord, previous.last.map(Self.sentenceEndings.contains) == true else { return nil }
+        } else {
+            let preferred = await settings.preferredLanguage
+            guard preferred == .russian, limits.minimumWordLength <= 1 else { return nil }
+        }
         let activeLayouts = await settings.activeLayouts
         guard let converted = LayoutMapper.shared.convertBest(text, from: .english, to: .russian, activeLayouts: activeLayouts),
-              Self.singleLetterWords[.russian]?.contains(converted) == true else {
+              Self.singleLetterWords[.russian]?.contains(converted.lowercased()) == true else {
             return nil
         }
-        logger.info("🔤 Single letter after a Russian word: '\(text)' → '\(converted)'")
+        logger.info("🔤 One-letter Russian word: '\(text)' → '\(converted)'")
 
         let bundleId = await MainActor.run { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
         let hypothesis = hypothesisFor(source: .english, target: .russian)
@@ -1187,6 +1201,8 @@ extension CorrectionEngine {
             targetLanguage: .russian
         )
     }
+
+    private static let sentenceEndings: Set<Character> = [".", "!", "?", "…"]
 
     /// Whether `word` (punctuation aside) is written in Russian letters.
     static func isRussianWord(_ word: String) -> Bool {
