@@ -81,8 +81,9 @@ actor ConfidenceRouter {
         var decision = await route(token: token, context: context, mode: mode)
 
         // A short word starting a sentence is decided like the same word in lowercase:
-        // "yj" became "но" while "Yj" was kept, the capital made it pass for an English
-        // name or abbreviation. The conversion keeps the capital ("Yj" → "Но").
+        // macOS's spell checker takes any capitalized short word for English ("Yj", "Lf"),
+        // so "yj" became "но" while "Yj" was kept. The conversion keeps the capital
+        // ("Yj" → "Но").
         if mode == .automatic,
            !decision.layoutHypothesis.rawValue.contains("_from_"),
            let lowercased = Self.lowercasedCapitalizedShortWord(token) {
