@@ -75,7 +75,7 @@ swift build
 swift test
 ```
 
-Requires macOS 13+, Xcode 15+, Swift 5.9+.
+Requires macOS 13+, Xcode 15+, Swift 5.10+.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and how to add new languages.
 

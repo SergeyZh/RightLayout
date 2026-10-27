@@ -75,7 +75,7 @@ swift build
 swift test
 ```
 
-Требуются macOS 13+, Xcode 15+, Swift 5.9+.
+Требуются macOS 13+, Xcode 15+, Swift 5.10+.
 
 См. [CONTRIBUTING.md](CONTRIBUTING.md) — настройка окружения, стиль кода и добавление новых языков.
 
@@ -117,3 +117,5 @@ Apache-2.0 — см. [LICENSE](LICENSE). Использование назван
 Создано [Alex Chernysh](https://alexchernysh.com)
 
 </div>
+
+Перевод основан на [README.md из коммита cdb5e3126550c6432cee421b20e7050537aff9a0](https://github.com/chernistry/RightLayout/blob/cdb5e3126550c6432cee421b20e7050537aff9a0/README.md).
