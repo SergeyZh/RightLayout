@@ -1,3 +1,5 @@
+[English](README.md) | [Русский](README.ru.md)
+
 <div align="center">
 
 # RightLayout SergeyZh
@@ -10,7 +12,7 @@ SergeyZh's build of [RightLayout](https://github.com/chernistry/RightLayout) —
 
 ---
 
-*English · Russian · Hebrew*
+*[English](README.md) · [Русский](README.ru.md) · Hebrew*
 
 *macOS 13+ · Free · Open Source*
 
@@ -102,7 +104,7 @@ swift build
 swift test
 ```
 
-Requires macOS 13+, Xcode 15+, Swift 5.9+.
+Requires macOS 13+, Xcode 15+, Swift 5.10+.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and how to add new languages.
 
