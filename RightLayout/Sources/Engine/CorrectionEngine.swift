@@ -134,7 +134,7 @@ package actor CorrectionEngine {
         let candidates: [Language: String]? 
         let isAmbiguousValid: Bool // True if this token was valid in source but ambiguous
         
-        var isValid: Bool { Date().timeIntervalSince(timestamp) < ThresholdsConfig.shared.timing.pendingWordTimeout }
+        var isValid: Bool { Date().timeIntervalSince(timestamp) < DecisionPipeline.value(.deferredTimeout) }
     }
 
     /// Outcome of a correction analysis (Ticket 61)

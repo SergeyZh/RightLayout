@@ -647,8 +647,10 @@ public final class LayoutMapper: @unchecked Sendable {
         let toID = activeLayouts?[to.rawValue] ?? self.activeLayouts[to] ?? "us"
         let installed = installedLayouts ?? installedLayoutIds
 
+        let filtersRearranged = DecisionPipeline.isEnabled(.rearrangedLayoutFilter)
+
         func isUsable(_ layoutId: String) -> Bool {
-            !Self.rearrangedLetterLayoutIds.contains(layoutId) || installed.contains(layoutId)
+            !filtersRearranged || !Self.rearrangedLetterLayoutIds.contains(layoutId) || installed.contains(layoutId)
         }
 
         var sourceLayouts: [String] = [fromID]
@@ -692,10 +694,12 @@ public final class LayoutMapper: @unchecked Sendable {
         let toID = activeLayouts?[to.rawValue] ?? self.activeLayouts[to] ?? "us"
         
         let fromID = activeLayouts?[from.rawValue] ?? self.activeLayouts[from]
+        let filtersRearranged = DecisionPipeline.isEnabled(.rearrangedLayoutFilter)
 
         var results: [(String, String)] = []
         for srcLayout in sourceLayouts {
-            if Self.rearrangedLetterLayoutIds.contains(srcLayout),
+            if filtersRearranged,
+               Self.rearrangedLetterLayoutIds.contains(srcLayout),
                srcLayout != fromID,
                !installedLayoutIds.contains(srcLayout) {
                 continue

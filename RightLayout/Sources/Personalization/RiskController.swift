@@ -119,12 +119,12 @@ actor RiskController {
 
         switch policy {
         case .autoApply:
-            if state.totalEvidence >= 4.0, upperBound < 0.70 {
+            if state.totalEvidence >= 4.0, upperBound < DecisionPipeline.value(.learningAutoDemoteBelow) {
                 return .suggestHint
             }
             return .autoApply
         case .suggestHint:
-            if state.totalEvidence >= 6.0, upperBound < 0.50 {
+            if state.totalEvidence >= 6.0, upperBound < DecisionPipeline.value(.learningHintDemoteBelow) {
                 return .holdForHotkey
             }
             return .suggestHint

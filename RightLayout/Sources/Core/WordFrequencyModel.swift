@@ -90,13 +90,15 @@ struct WordFrequencyModel: Sendable {
 
     /// Score in [0, 1]. Unknown words score 0.
     func score(_ word: String) -> Double {
+        guard DecisionPipeline.isEnabled(.frequencyDictionaries) else { return 0.0 }
         let key = word.lowercased()
         guard let v = logCountByWord[key] else { return 0.0 }
         return Double(v * invMaxLogCount)
     }
 
     func contains(_ word: String) -> Bool {
-        logCountByWord[word.lowercased()] != nil
+        guard DecisionPipeline.isEnabled(.frequencyDictionaries) else { return false }
+        return logCountByWord[word.lowercased()] != nil
     }
 }
 

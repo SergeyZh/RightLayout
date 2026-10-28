@@ -15,7 +15,8 @@ enum BuiltinLexicon {
     static var hebrew: Set<String> { config.lexiconHebrew }
 
     static func contains(_ word: String, language: Language) -> Bool {
-        config.lexiconContains(word, language: language)
+        guard DecisionPipeline.isEnabled(.builtinLexicon) else { return false }
+        return config.lexiconContains(word, language: language)
     }
 }
 
@@ -54,6 +55,7 @@ struct SystemWordValidator: WordValidator {
     func confidence(for text: String, language: Language) -> Double {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return 0.0 }
+        guard DecisionPipeline.isEnabled(.systemSpellChecker) else { return 0.0 }
 
         guard let code = (languageCodes[language] ?? nil) else { return 0.0 }
 

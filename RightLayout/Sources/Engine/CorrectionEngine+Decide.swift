@@ -72,7 +72,8 @@ extension CorrectionEngine {
         }
         
         // Ticket 55: Zero Interference for international terms
-        if languageData.zeroInterference.contains(text.lowercased()) {
+        if DecisionPipeline.isEnabled(.zeroInterference),
+           languageData.zeroInterference.contains(text.lowercased()) {
             logger.info("🛡️ Zero Interference: '\(text)' is strictly preserved")
             return CorrectionResult(corrected: nil, action: .none, pendingCorrection: nil, pendingOriginal: nil, trackingId: nil, transliterationSuggestion: nil)
         }
@@ -97,7 +98,12 @@ extension CorrectionEngine {
 
         // Ticket 42: Safety Gating (Code/URL detection)
         // Check if text looks like code or URL/Command before expensive routing
-        let intent = await intentDetector.detect(text: text)
+        let intent: UserIntent
+        if DecisionPipeline.isEnabled(.intentDetector) {
+            intent = await intentDetector.detect(text: text)
+        } else {
+            intent = .prose
+        }
         if intent != .prose {
              DecisionTrail.note("intent=\(intent)")
              logger.info("🛡️ Intent detected: \(String(describing: intent)) - skipping correction for safety")
@@ -148,9 +154,9 @@ extension CorrectionEngine {
         let punctuatedWord = evidence.tokenKind == .punctuated && evidence.isCorrection
             ? CorrectionDecisionPolicy.letterCore(of: evidence.convertedText)
             : nil
-        let isWordTypedWithPunctuationKeys = punctuatedWord.map {
+        let isWordTypedWithPunctuationKeys = DecisionPipeline.isEnabled(.punctuationKeyWords) && (punctuatedWord.map {
             WordFrequencyModel.shared(evidence.targetLanguage.rawValue)?.contains(String($0)) ?? false
-        } ?? false
+        } ?? false)
         let usesFastLane = evidence.tokenKind == .plain
             || evidence.isWhitelistedShort
             || isShortWithEdgePunctuation
@@ -243,7 +249,7 @@ extension CorrectionEngine {
         // Smart handling for tokens with internal punctuation/symbols:
         // - If punctuation is actually a mapped RU/HE letter (e.g. "k.,k.", "cj;fktyb."), whole-token conversion should win.
         // - If punctuation is a separator between multiple words (e.g. "ghbdtn.rfr"), split + per-word conversion should win.
-        if text.contains(where: { !$0.isLetter && !$0.isNumber }) {
+        if DecisionPipeline.isEnabled(.smartSplit), text.contains(where: { !$0.isLetter && !$0.isNumber }) {
             let activeLayouts = await settings.activeLayouts
             if let smart = await bestSmartCorrection(
                 for: text,
@@ -322,15 +328,18 @@ extension CorrectionEngine {
         // Check whitelist for Hebrew short words (Ticket 55) - vital for "Yes"/"No" (כן/לא)
         var hebrewShortWordCandidate: String? = nil
         let heWords = languageData.hebrewCommonShortWords
+        let checksHebrewShortWords = DecisionPipeline.isEnabled(.hebrewShortWords)
         
         // Robust check: does ANY English->Hebrew mapping yield a common short word?
-        let enVariants = LayoutMapper.shared.convertAllVariants(text, from: .english, to: .hebrew)
-        if let match = enVariants.first(where: { heWords.contains($0.result) }) {
-            hebrewShortWordCandidate = match.result
+        if checksHebrewShortWords {
+            let enVariants = LayoutMapper.shared.convertAllVariants(text, from: .english, to: .hebrew)
+            if let match = enVariants.first(where: { heWords.contains($0.result) }) {
+                hebrewShortWordCandidate = match.result
+            }
         }
         
         // Check Russian->Hebrew
-        if hebrewShortWordCandidate == nil {
+        if checksHebrewShortWords, hebrewShortWordCandidate == nil {
             let ruVariants = LayoutMapper.shared.convertAllVariants(text, from: .russian, to: .hebrew)
             if let match = ruVariants.first(where: { heWords.contains($0.result) }) {
                 hebrewShortWordCandidate = match.result
@@ -346,7 +355,7 @@ extension CorrectionEngine {
         if isHeShortWord {
             effectiveThreshold = min(threshold, 0.3)
         } else if isShortCorrectionCandidate {
-            effectiveThreshold = min(threshold, 0.58)
+            effectiveThreshold = min(threshold, DecisionPipeline.value(.shortWordThreshold))
         } else {
             effectiveThreshold = threshold
         }
@@ -357,13 +366,14 @@ extension CorrectionEngine {
             logger.info("⏭️ Skipping correction (confidence too low after adjustment)")
             
             // Store as pending if confidence is in "uncertain" range (e.g., 0.4-0.7)
-            let minPendingConfidence = ThresholdsConfig.shared.timing.pendingWordMinConfidence
+            let minPendingConfidence = DecisionPipeline.value(.deferredMinConfidence)
             
             // For single-letter tokens that could be Russian prepositions OR common short Hebrew words, lower the threshold
             let isPrepositionCandidate = (text.count == 1 && russianPrepositionMappings[text.lowercased()] != nil) || isHeShortWord
             let effectiveMinConfidence = isPrepositionCandidate ? ThresholdsConfig.shared.timing.prepositionMinConfidence : minPendingConfidence
             
-            if adjustedConfidence >= effectiveMinConfidence || isPrepositionCandidate {
+            if DecisionPipeline.isEnabled(.deferredWords),
+               adjustedConfidence >= effectiveMinConfidence || isPrepositionCandidate {
                 let isFirst = sentenceWordCount == 0 && pendingWord == nil
                 pendingWord = PendingWord(
                     text: text,
@@ -419,7 +429,8 @@ extension CorrectionEngine {
         if !needsCorrection {
             // Context override for short ambiguous tokens inside a strong sentence.
             // Example: "vs" should become "мы" inside a Russian sentence.
-            if let dominant = sentenceDominantLanguage,
+            if DecisionPipeline.isEnabled(.sentenceContextOverride),
+               let dominant = sentenceDominantLanguage,
                dominant != decision.language,
                sentenceWordCount >= 2,
                text.count <= 2,
@@ -442,7 +453,8 @@ extension CorrectionEngine {
 
             // Ticket 49: If token is valid in current layout BUT is short (<= 2) and prose,
             // check if it has strong candidates in other languages. If so, store as Ambiguous Pending.
-            if text.count <= 2
+            if DecisionPipeline.isEnabled(.deferredWords)
+               && text.count <= 2
                && intent == .prose
                && pendingWord == nil
                && !router.isTechnicalToken(text) {
@@ -512,7 +524,8 @@ extension CorrectionEngine {
 
             // Ticket 45 Fix: Ensure preposition candidates are stored as pending
             // even if they are valid in current layout (e.g. "e" is valid English, but might be "у" in context)
-            if pendingWord == nil && text.count == 1 && russianPrepositionMappings[text.lowercased()] != nil {
+            if DecisionPipeline.isEnabled(.deferredWords),
+               pendingWord == nil && text.count == 1 && russianPrepositionMappings[text.lowercased()] != nil {
                 // Store with high confidence since it was deemed valid
                 pendingWord = PendingWord(
                     text: text,
@@ -942,6 +955,11 @@ extension CorrectionEngine {
             return (nil, nil)
         }
 
+        guard DecisionPipeline.isEnabled(.deferredWords) else {
+            pendingWord = nil
+            return (nil, nil)
+        }
+
         guard editingEnvironment == .accessibility,
               riskPolicy == .autoApply,
               pending.text.filter(\.isLetter).count > 1 else {
@@ -1129,7 +1147,8 @@ extension CorrectionEngine {
     /// Only with the default minimum word length (or a shorter one) and outside the
     /// conservative preset.
     func singleRussianLetterWord(_ text: String, phraseBuffer: String) async -> CorrectionResult? {
-        guard text.count == 1,
+        guard DecisionPipeline.isEnabled(.singleRussianLetter),
+              text.count == 1,
               let letter = text.first,
               letter.isASCII, letter.isLetter,
               Self.singleLetterWords[.english]?.contains(text.lowercased()) == false else {
@@ -1252,6 +1271,7 @@ extension CorrectionEngine {
     }
 
     func contextualCascadeCorrection(for text: String, targetLanguage: Language) async -> String? {
+        guard DecisionPipeline.isEnabled(.previousWordCascade) else { return nil }
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty, normalized.filter(\.isLetter).count <= 2 else {
             return nil

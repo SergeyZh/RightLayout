@@ -85,6 +85,7 @@ actor ConfidenceRouter {
         // so "yj" became "но" while "Yj" was kept. The conversion keeps the capital
         // ("Yj" → "Но").
         if mode == .automatic,
+           DecisionPipeline.isEnabled(.capitalizedShortWords),
            !decision.layoutHypothesis.rawValue.contains("_from_"),
            let lowercased = Self.lowercasedCapitalizedShortWord(token) {
             let lowered = await route(token: lowercased, context: context, mode: mode)
@@ -105,11 +106,12 @@ actor ConfidenceRouter {
            !decision.layoutHypothesis.rawValue.contains("_from_"),
            let fallbackCandidate,
            fallbackCandidate.layoutHypothesis.rawValue.contains("_from_"),
-           fallbackCandidate.confidence >= 0.78 {
+           fallbackCandidate.confidence >= DecisionPipeline.value(.scoredOverrideConfidence) {
             decision = fallbackCandidate
         }
 
         if mode == .automatic,
+           DecisionPipeline.isEnabled(.wrongLayoutPunctuation),
            !decision.layoutHypothesis.rawValue.contains("_from_"),
            let punctuated = wrongLayoutPunctuationDecision(
                token: token,
@@ -270,7 +272,8 @@ actor ConfidenceRouter {
         enabledLanguages: Set<Language>
     ) async -> LanguageDecision {
         // NEW: User Dictionary Lookup
-        if let rule = await UserDictionary.shared.lookup(token) {
+        if DecisionPipeline.isEnabled(.userDictionary),
+           let rule = await UserDictionary.shared.lookup(token) {
             switch rule.action {
             case .keepAsIs:
                 if mode == .manual {
@@ -352,7 +355,7 @@ actor ConfidenceRouter {
             //    Reason: variables (x, y, z), abbreviations, and false-positive ping-pong risk.
             //    Exception: Manual mode (hotkey) can override this.
             //    Exception (Ticket 59): Known prepositions (y -> н) are allowed if active layout checks pass.
-            if mode == .automatic {
+            if mode == .automatic, DecisionPipeline.isEnabled(.singleLetterSafety) {
                 let letterCount = latin + cyr + heb
                 if letterCount == 1 {
                     // Determine which script the single letter belongs to
@@ -395,7 +398,7 @@ actor ConfidenceRouter {
             }
 
             let scriptCount = (latin > 0 ? 1 : 0) + (cyr > 0 ? 1 : 0) + (heb > 0 ? 1 : 0)
-            if scriptCount >= 2 {
+            if scriptCount >= 2, DecisionPipeline.isEnabled(.mixedScriptGuard) {
                 let lang: Language
                 if cyr >= latin && cyr >= heb {
                     lang = .russian
@@ -419,7 +422,8 @@ actor ConfidenceRouter {
         }
 
         // Whitelist check - don't convert common words/slang
-        if let lang = languageData.whitelistedLanguage(token) {
+        if DecisionPipeline.isEnabled(.whitelist),
+           let lang = languageData.whitelistedLanguage(token) {
             let hyp: LanguageHypothesis = lang == .english ? .en : (lang == .russian ? .ru : .he)
             let decision = LanguageDecision(language: lang, layoutHypothesis: hyp, confidence: 1.0, scores: [:])
             DecisionLogger.shared.logDecision(token: token, path: "WHITELIST", result: decision)
@@ -430,9 +434,11 @@ actor ConfidenceRouter {
         // If the token is dominantly Cyrillic and looks like a valid Russian word/phrase,
         // do NOT attempt layout corrections away from Russian. This prevents false positives like
         // "люблю" being treated as `en_from_ru` and entering an auto-reject learning loop.
-        if mode == .automatic, dominantScriptLanguage(token) == .russian {
+        if mode == .automatic,
+           DecisionPipeline.isEnabled(.russianProtection),
+           dominantScriptLanguage(token) == .russian {
             let ruWord = wordValidator.confidence(for: token, language: .russian)
-            if ruWord >= thresholds.sourceWordConfMax {
+            if ruWord >= DecisionPipeline.value(.russianProtectionMin) {
                 let decision = LanguageDecision(language: .russian, layoutHypothesis: .ru, confidence: 1.0, scores: [:])
                 DecisionLogger.shared.logDecision(token: token, path: "SCRIPT_LOCK_RU", result: decision)
                 return decision
@@ -469,7 +475,7 @@ actor ConfidenceRouter {
         var baselinePath = "STANDARD"
         
         // 1a. FAST PATH: N-gram Only
-        if token.count >= 4 {
+        if token.count >= 4, DecisionPipeline.isEnabled(.fastPath) {
             if let fastDecision = checkFastPath(token) {
                 let threshold = await settings.fastPathThreshold
                 if fastDecision.confidence >= threshold {
@@ -481,6 +487,19 @@ actor ConfidenceRouter {
         }
         
         // 1b. STANDARD PATH: Ensemble (if Fast Path didn't produce high-confidence result)
+        if baselineDecision == nil, !DecisionPipeline.isEnabled(.ensemble) {
+            // Without the ensemble the baseline is the word as typed, with no confidence
+            // to speak of: only the checks below can find a correction.
+            let language = dominantScriptLanguage(token) ?? .english
+            baselineDecision = LanguageDecision(
+                language: language,
+                layoutHypothesis: language.asHypothesis,
+                confidence: thresholds.fallbackConfidence,
+                scores: [:]
+            )
+            baselinePath = "FALLBACK"
+        }
+
         if baselineDecision == nil {
             let ensembleContext = EnsembleContext(lastLanguage: context.lastLanguage, activeLayouts: activeLayouts)
             let decision = await ensemble.classify(token, context: ensembleContext)
@@ -519,7 +538,8 @@ actor ConfidenceRouter {
         // CoreML can detect "_from_" hypotheses that contradict the baseline.
         logger.info("🧠 Deep Path (CoreML) checking for layout mismatch: \(DecisionLogger.tokenSummary(token), privacy: .public)")
         
-        if let (deepHypothesis, deepConf) = coreML.predict(token) {
+        if DecisionPipeline.isEnabled(.coreML),
+           let (deepHypothesis, deepConf) = coreML.predict(token) {
             logger.info("🧠 Deep Path result: \(deepHypothesis.rawValue, privacy: .public) (conf: \(deepConf))")
             
             let isCorrection = deepHypothesis.rawValue.contains("_from_")
@@ -528,7 +548,7 @@ actor ConfidenceRouter {
                 // CoreML thinks this is a layout mismatch (e.g. "en_from_ru").
                 // VALIDATION: Before accepting, convert the text and verify the result
                 // is actually valid in the target language using N-gram scoring.
-                if deepConf > thresholds.correctionThreshold {
+                if deepConf > DecisionPipeline.value(.coreMLMinConfidence) {
                     // Determine source and target layouts
                     let sourceLayout: Language
                     let targetLanguage = deepHypothesis.targetLanguage
@@ -652,7 +672,7 @@ actor ConfidenceRouter {
                         // Only override CoreML when the alternative is clearly better.
                         if !bestIsModel {
                             if let modelCand = validated.first(where: { $0.hypothesis == deepHypothesis }) {
-                                if bestOverall.quality < modelCand.quality + 0.12 {
+                                if bestOverall.quality < modelCand.quality + DecisionPipeline.value(.coreMLOverrideMargin) {
                                     // Not a strong enough reason to override; keep CoreML's choice.
                                     validated = [modelCand]
                                 }
@@ -717,13 +737,13 @@ actor ConfidenceRouter {
                         DecisionLogger.shared.log(rejectedMsg)
                     }
                 } else {
-                    let rejectedMsg = "REJECTED_DEEP_CORRECTION: \(deepHypothesis.rawValue) (\(String(format: "%.2f", deepConf))) < \(thresholds.correctionThreshold)"
+                    let rejectedMsg = "REJECTED_DEEP_CORRECTION: \(deepHypothesis.rawValue) (\(String(format: "%.2f", deepConf))) < \(DecisionPipeline.value(.coreMLMinConfidence))"
                     DecisionLogger.shared.log(rejectedMsg)
                 }
             } else {
                 // CoreML just confirms the script (e.g. "ru" for Cyrillic).
                 // Only prefer CoreML if it's more confident than baseline.
-                if deepConf > baseline.confidence && deepConf > thresholds.deepConfidenceMin {
+                if deepConf > baseline.confidence && deepConf > DecisionPipeline.value(.coreMLAsTypedMin) {
                     let deepResult = LanguageDecision(
                         language: deepHypothesis.targetLanguage, 
                         layoutHypothesis: deepHypothesis,
@@ -1165,11 +1185,12 @@ actor ConfidenceRouter {
         activeLayouts: [String: String],
         enabledLanguages: Set<Language>
     ) -> LanguageDecision? {
-        guard let dominant = dominantScriptLanguage(token) else { return nil }
+        guard DecisionPipeline.isEnabled(.heuristic),
+              let dominant = dominantScriptLanguage(token) else { return nil }
 
         // If the token already looks like a valid word/phrase in its dominant script,
         // don't attempt layout correction (avoid false positives).
-        if wordValidator.confidence(for: token, language: dominant) >= thresholds.sourceWordConfMax {
+        if wordValidator.confidence(for: token, language: dominant) >= DecisionPipeline.value(.heuristicSourceWordMax) {
             return nil
         }
 
@@ -1261,6 +1282,7 @@ actor ConfidenceRouter {
         mode: DetectionMode,
         enabledLanguages: Set<Language>
     ) -> LanguageDecision? {
+        guard DecisionPipeline.isEnabled(.scoredDecision) else { return nil }
 
         // Tuning constants for scored decision
         let correctionBias = 0.05         // Small bias against corrections to avoid false positives
@@ -1432,7 +1454,9 @@ actor ConfidenceRouter {
 
         // Only accept if the best mapped hypothesis is substantially better than any as-is option.
         let letterCount = token.filter { $0.isLetter }.count
-        var requiredMargin = letterCount <= 3 ? thresholds.shortWordMargin : thresholds.longWordMargin
+        var requiredMargin = letterCount <= 3
+            ? DecisionPipeline.value(.scoredShortMargin)
+            : DecisionPipeline.value(.scoredLongMargin)
         if dominant == .hebrew {
             requiredMargin = letterCount <= 3 ? 0.10 : max(0.25, requiredMargin - 0.40)
         }
@@ -1442,7 +1466,7 @@ actor ConfidenceRouter {
         }
         
         guard best.q >= bestAsIs + requiredMargin else { return nil }
-        guard best.targetWord >= thresholds.wordConfidenceMin else { return nil }
+        guard best.targetWord >= DecisionPipeline.value(.scoredTargetWordMin) else { return nil }
 
         logger.debug("📊 scoredDecision: '\(token)' → '\(best.converted)' [\(best.hypothesis.rawValue)] q=\(best.q, format: .fixed(precision: 2)) asIs=\(bestAsIs, format: .fixed(precision: 2)) margin=\(requiredMargin, format: .fixed(precision: 2)) strong=\(best.isStrongAccept)")
 
@@ -1450,7 +1474,7 @@ actor ConfidenceRouter {
     }
 
     nonisolated func isTechnicalToken(_ token: String) -> Bool {
-        guard !token.isEmpty else { return false }
+        guard !token.isEmpty, DecisionPipeline.isEnabled(.technicalTokenGuard) else { return false }
 
         // Common file extensions (keep these tokens as-is in automatic mode).
         // This intentionally excludes arbitrary one-letter "extensions" to avoid blocking
