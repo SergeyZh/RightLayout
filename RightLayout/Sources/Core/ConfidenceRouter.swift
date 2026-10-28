@@ -91,7 +91,10 @@ actor ConfidenceRouter {
             let lowered = await route(token: lowercased, context: context, mode: mode)
             if lowered.layoutHypothesis.rawValue.contains("_from_") {
                 DecisionLogger.shared.logDecision(token: token, path: "CAPITALIZED_AS_LOWERCASE", result: lowered)
+                DecisionProbe.record(.capitalizedShortWords, .decided, .decidedAsLowercase, [lowercased, DecisionProbe.name(lowered.layoutHypothesis)])
                 decision = lowered
+            } else {
+                DecisionProbe.record(.capitalizedShortWords, .checked, .lowercaseTypedCorrectly, [lowercased])
             }
         }
 
@@ -107,6 +110,10 @@ actor ConfidenceRouter {
            let fallbackCandidate,
            fallbackCandidate.layoutHypothesis.rawValue.contains("_from_"),
            fallbackCandidate.confidence >= DecisionPipeline.value(.scoredOverrideConfidence) {
+            DecisionProbe.record(.scoredDecision, .decided, .overridesTypedCorrectly, [
+                DecisionProbe.name(fallbackCandidate.layoutHypothesis),
+                DecisionProbe.percent(fallbackCandidate.confidence)
+            ])
             decision = fallbackCandidate
         }
 
@@ -119,6 +126,10 @@ actor ConfidenceRouter {
                enabledLanguages: enabledLanguages
            ) {
             decision = punctuated
+        } else if mode == .automatic,
+                  DecisionPipeline.isEnabled(.wrongLayoutPunctuation),
+                  !decision.layoutHypothesis.rawValue.contains("_from_") {
+            DecisionProbe.record(.wrongLayoutPunctuation, .checked, .doesNotApply)
         }
 
         let convertedText = convertedText(for: token, decision: decision, activeLayouts: activeLayouts)
@@ -200,6 +211,7 @@ actor ConfidenceRouter {
         }
         let decision = LanguageDecision(language: .russian, layoutHypothesis: .ruFromEnLayout, confidence: 0.95, scores: [:])
         DecisionLogger.shared.logDecision(token: token, path: "WRONG_LAYOUT_PUNCTUATION", result: decision)
+        DecisionProbe.record(.wrongLayoutPunctuation, .decided, .russianPunctuationAtEnd, [converted])
         return decision
     }
 
@@ -245,6 +257,7 @@ actor ConfidenceRouter {
     private func restrict(_ decision: LanguageDecision, token: String, to enabledLanguages: Set<Language>) -> LanguageDecision {
         let allowedScores = decision.scores.filter { $0.key.isAllowed(in: enabledLanguages) }
         guard !decision.layoutHypothesis.isAllowed(in: enabledLanguages) else {
+            DecisionProbe.record(.languageFilter, .checked, .workingLanguagesOnly)
             return allowedScores.count == decision.scores.count
                 ? decision
                 : LanguageDecision(
@@ -257,6 +270,7 @@ actor ConfidenceRouter {
 
         let language = dominantScriptLanguage(token) ?? decision.layoutHypothesis.sourceLanguage ?? .english
         DecisionLogger.shared.log("LANGUAGE_FILTER: \(decision.layoutHypothesis.rawValue) involves a disabled language, keeping as-is")
+        DecisionProbe.record(.languageFilter, .decided, .languageOff, [DecisionProbe.name(decision.layoutHypothesis)])
         return LanguageDecision(
             language: language,
             layoutHypothesis: language.asHypothesis,
@@ -288,6 +302,7 @@ actor ConfidenceRouter {
                      
                      let decision = LanguageDecision(language: lang, layoutHypothesis: hyp, confidence: 1.0, scores: [:])
                      DecisionLogger.shared.logDecision(token: token, path: "USER_DICT_KEEP", result: decision)
+                     DecisionProbe.record(.userDictionary, .decided, .ruleKeep)
                      return decision
                 }
             case .preferHypothesis(let hypStr):
@@ -316,6 +331,7 @@ actor ConfidenceRouter {
                                scores: [:]
                            )
                            DecisionLogger.shared.logDecision(token: token, path: "USER_DICT_PREFER", result: decision)
+                           DecisionProbe.record(.userDictionary, .decided, .rulePrefer, [DecisionProbe.name(hyp)])
                            return decision
                       }
                  }
@@ -324,6 +340,8 @@ actor ConfidenceRouter {
             default:
                  break
             }
+        } else if DecisionPipeline.isEnabled(.userDictionary) {
+            DecisionProbe.record(.userDictionary, .checked, .noRule)
         }
 
         // Mixed-script guard (automatic + manual):
@@ -367,6 +385,7 @@ actor ConfidenceRouter {
                         let activeLayouts = await settings.activeLayouts
                         if let converted = LayoutMapper.shared.convertBest(token, from: .english, to: .russian, activeLayouts: activeLayouts),
                            knownRussianPrepositions.contains(converted) {
+                            DecisionProbe.record(.singleLetterSafety, .checked, .singleLetterPreposition, [converted])
                             // It's a valid preposition (e.g. y -> н), allow normal processing
                             // We do NOT return 'decision' here, we let it fall through to detection logic
                              // But we must Break out of this if/return block.
@@ -380,6 +399,7 @@ actor ConfidenceRouter {
                                 scores: [:]
                             )
                             DecisionLogger.shared.logDecision(token: token, path: "SINGLE_LETTER_SAFETY_EN", result: decision)
+                            DecisionProbe.record(.singleLetterSafety, .decided, .singleLetterKept)
                             return decision
                         }
                     } else {
@@ -392,8 +412,11 @@ actor ConfidenceRouter {
                             scores: [:]
                         )
                         DecisionLogger.shared.logDecision(token: token, path: "SINGLE_LETTER_SAFETY_OTHER", result: decision)
+                        DecisionProbe.record(.singleLetterSafety, .decided, .singleLetterKept)
                         return decision
                     }
+                } else {
+                    DecisionProbe.record(.singleLetterSafety, .checked, .notSingleLetter)
                 }
             }
 
@@ -409,7 +432,10 @@ actor ConfidenceRouter {
                 }
                 let decision = LanguageDecision(language: lang, layoutHypothesis: lang.asHypothesis, confidence: 1.0, scores: [:])
                 DecisionLogger.shared.logDecision(token: token, path: "MIXED_SCRIPT_KEEP", result: decision)
+                DecisionProbe.record(.mixedScriptGuard, .decided, .mixedAlphabetsKept)
                 return decision
+            } else if DecisionPipeline.isEnabled(.mixedScriptGuard) {
+                DecisionProbe.record(.mixedScriptGuard, .checked, .oneAlphabet)
             }
         }
 
@@ -418,7 +444,10 @@ actor ConfidenceRouter {
         if mode == .automatic, isTechnicalToken(token) {
             let decision = LanguageDecision(language: .english, layoutHypothesis: .en, confidence: 1.0, scores: [:])
             DecisionLogger.shared.logDecision(token: token, path: "TECHNICAL_KEEP", result: decision)
+            DecisionProbe.record(.technicalTokenGuard, .decided, .technicalKept)
             return decision
+        } else if mode == .automatic, DecisionPipeline.isEnabled(.technicalTokenGuard) {
+            DecisionProbe.record(.technicalTokenGuard, .checked, .notTechnical)
         }
 
         // Whitelist check - don't convert common words/slang
@@ -427,7 +456,10 @@ actor ConfidenceRouter {
             let hyp: LanguageHypothesis = lang == .english ? .en : (lang == .russian ? .ru : .he)
             let decision = LanguageDecision(language: lang, layoutHypothesis: hyp, confidence: 1.0, scores: [:])
             DecisionLogger.shared.logDecision(token: token, path: "WHITELIST", result: decision)
+            DecisionProbe.record(.whitelist, .decided, .whitelisted, [DecisionProbe.name(lang)])
             return decision
+        } else if DecisionPipeline.isEnabled(.whitelist) {
+            DecisionProbe.record(.whitelist, .checked, .notWhitelisted)
         }
 
         // Strong-script sanity (automatic mode):
@@ -441,8 +473,15 @@ actor ConfidenceRouter {
             if ruWord >= DecisionPipeline.value(.russianProtectionMin) {
                 let decision = LanguageDecision(language: .russian, layoutHypothesis: .ru, confidence: 1.0, scores: [:])
                 DecisionLogger.shared.logDecision(token: token, path: "SCRIPT_LOCK_RU", result: decision)
+                DecisionProbe.record(.russianProtection, .decided, .knownRussian, [DecisionProbe.percent(ruWord)])
                 return decision
             }
+            DecisionProbe.record(.russianProtection, .checked, .notKnownRussian, [
+                DecisionProbe.percent(ruWord),
+                DecisionProbe.percent(DecisionPipeline.value(.russianProtectionMin))
+            ])
+        } else if mode == .automatic, DecisionPipeline.isEnabled(.russianProtection) {
+            DecisionProbe.record(.russianProtection, .checked, .notCyrillic)
         }
         
         let startTime = CFAbsoluteTimeGetCurrent()
@@ -466,8 +505,13 @@ actor ConfidenceRouter {
             let stdThreshold = await settings.standardPathThreshold
             if scored.confidence >= stdThreshold {
                 DecisionLogger.shared.logDecision(token: token, path: "SCORE", result: scored)
+                DecisionProbe.record(.scoredDecision, .decided, .confidentDecided, [DecisionProbe.percent(scored.confidence)])
                 return scored
             }
+            DecisionProbe.record(.scoredDecision, .contributed, .belowThreshold, [
+                DecisionProbe.percent(scored.confidence),
+                DecisionProbe.percent(stdThreshold)
+            ])
         }
         
         // -- STEP 1: Get a baseline decision via Fast or Standard path --
@@ -475,14 +519,30 @@ actor ConfidenceRouter {
         var baselinePath = "STANDARD"
         
         // 1a. FAST PATH: N-gram Only
+        if token.count < 4, DecisionPipeline.isEnabled(.fastPath) {
+            DecisionProbe.record(.fastPath, .checked, .shorterThanFour)
+        }
         if token.count >= 4, DecisionPipeline.isEnabled(.fastPath) {
             if let fastDecision = checkFastPath(token) {
                 let threshold = await settings.fastPathThreshold
+                if fastDecision.confidence < threshold {
+                    DecisionProbe.record(.fastPath, .checked, .answerBelow, [
+                        DecisionProbe.name(fastDecision.layoutHypothesis),
+                        DecisionProbe.percent(fastDecision.confidence),
+                        DecisionProbe.percent(threshold)
+                    ])
+                }
                 if fastDecision.confidence >= threshold {
+                    DecisionProbe.record(.fastPath, .contributed, .typedCorrectlyIn, [
+                        DecisionProbe.name(fastDecision.language),
+                        DecisionProbe.percent(fastDecision.confidence)
+                    ])
                     logger.info("🚀 Fast Path (N-gram) candidate: \(fastDecision.language.rawValue, privacy: .public) (conf: \(fastDecision.confidence))")
                     baselineDecision = fastDecision
                     baselinePath = "FAST"
                 }
+            } else {
+                DecisionProbe.record(.fastPath, .checked, .trigramsUnsure)
             }
         }
         
@@ -503,6 +563,10 @@ actor ConfidenceRouter {
         if baselineDecision == nil {
             let ensembleContext = EnsembleContext(lastLanguage: context.lastLanguage, activeLayouts: activeLayouts)
             let decision = await ensemble.classify(token, context: ensembleContext)
+            DecisionProbe.record(.ensemble, .contributed, .baseline, [
+                DecisionProbe.name(decision.layoutHypothesis),
+                DecisionProbe.percent(decision.confidence)
+            ])
             let stdThreshold = await settings.standardPathThreshold
             if decision.confidence >= stdThreshold {
                 logger.info("🛡️ Standard Path (Ensemble) candidate: \(decision.language.rawValue, privacy: .public) (conf: \(decision.confidence))")
@@ -530,6 +594,10 @@ actor ConfidenceRouter {
                 activeLayouts: activeLayouts
             ) {
                 DecisionLogger.shared.logDecision(token: token, path: "BASELINE_CORRECTION", result: validated)
+                DecisionProbe.record(baselinePath == "FAST" ? .fastPath : .ensemble, .decided, .baselineConfirmed, [
+                    DecisionProbe.name(validated.layoutHypothesis),
+                    DecisionProbe.percent(validated.confidence)
+                ])
                 return validated
             }
         }
@@ -538,8 +606,11 @@ actor ConfidenceRouter {
         // CoreML can detect "_from_" hypotheses that contradict the baseline.
         logger.info("🧠 Deep Path (CoreML) checking for layout mismatch: \(DecisionLogger.tokenSummary(token), privacy: .public)")
         
-        if DecisionPipeline.isEnabled(.coreML),
-           let (deepHypothesis, deepConf) = coreML.predict(token) {
+        let prediction = DecisionPipeline.isEnabled(.coreML) ? coreML.predict(token) : nil
+        if DecisionPipeline.isEnabled(.coreML), prediction == nil {
+            DecisionProbe.record(.coreML, .checked, .noAnswer)
+        }
+        if let (deepHypothesis, deepConf) = prediction {
             logger.info("🧠 Deep Path result: \(deepHypothesis.rawValue, privacy: .public) (conf: \(deepConf))")
             
             let isCorrection = deepHypothesis.rawValue.contains("_from_")
@@ -565,6 +636,10 @@ actor ConfidenceRouter {
                         let rejectedMsg = "REJECTED_SCRIPT: \(deepHypothesis.rawValue) | dominant=\(dominant.rawValue) source=\(sourceLayout.rawValue)"
                         DecisionLogger.shared.log(rejectedMsg)
                         DecisionLogger.shared.logDecision(token: token, path: "DEEP", result: baseline)
+                        DecisionProbe.record(.coreML, .rejected, .modelWrongAlphabet, [
+                            DecisionProbe.name(deepHypothesis),
+                            DecisionProbe.percent(deepConf)
+                        ])
                         return baseline
                     }
                     
@@ -688,6 +763,11 @@ actor ConfidenceRouter {
                             scores: [:]
                         )
                         DecisionLogger.shared.log("DEEP_BEST: \(chosen.hypothesis.rawValue) via len=\(chosen.converted.count)")
+                        DecisionProbe.record(.coreML, .decided, .modelAccepted, [
+                            DecisionProbe.name(chosen.hypothesis),
+                            DecisionProbe.percent(chosenConf),
+                            chosen.converted
+                        ])
                         DecisionLogger.shared.logDecision(token: token, path: "DEEP_CORRECTION", result: deepResult)
                         return deepResult
                     }
@@ -703,6 +783,11 @@ actor ConfidenceRouter {
                             scores: [:]
                         )
                         DecisionLogger.shared.log("VALIDATED_PRIMARY: \(DecisionLogger.tokenSummary(token)) → len=\(primary.count)")
+                        DecisionProbe.record(.coreML, .decided, .modelAccepted, [
+                            DecisionProbe.name(deepHypothesis),
+                            DecisionProbe.percent(deepResult.confidence),
+                            primary
+                        ])
                         DecisionLogger.shared.logDecision(token: token, path: "DEEP_CORRECTION", result: deepResult)
                         return deepResult
                     }
@@ -723,7 +808,12 @@ actor ConfidenceRouter {
                         }
                     }
                     
-                    if bestConversion != nil {
+                    if let bestConversion {
+                        DecisionProbe.record(.coreML, .decided, .modelAccepted, [
+                            DecisionProbe.name(deepHypothesis),
+                            DecisionProbe.percent(max(deepConf, 0.85)),
+                            bestConversion.converted
+                        ])
                         let deepResult = LanguageDecision(
                             language: targetLanguage, 
                             layoutHypothesis: deepHypothesis,
@@ -735,10 +825,19 @@ actor ConfidenceRouter {
                     } else {
                         let rejectedMsg = "REJECTED_VALIDATION: \(deepHypothesis.rawValue) | no valid conversion found from \(variants.count) variants"
                         DecisionLogger.shared.log(rejectedMsg)
+                        DecisionProbe.record(.coreML, .rejected, .modelNoWord, [
+                            DecisionProbe.name(deepHypothesis),
+                            DecisionProbe.percent(deepConf)
+                        ])
                     }
                 } else {
                     let rejectedMsg = "REJECTED_DEEP_CORRECTION: \(deepHypothesis.rawValue) (\(String(format: "%.2f", deepConf))) < \(DecisionPipeline.value(.coreMLMinConfidence))"
                     DecisionLogger.shared.log(rejectedMsg)
+                    DecisionProbe.record(.coreML, .rejected, .modelIgnored, [
+                        DecisionProbe.name(deepHypothesis),
+                        DecisionProbe.percent(deepConf),
+                        DecisionProbe.percent(DecisionPipeline.value(.coreMLMinConfidence))
+                    ])
                 }
             } else {
                 // CoreML just confirms the script (e.g. "ru" for Cyrillic).
@@ -751,8 +850,16 @@ actor ConfidenceRouter {
                         scores: [:] 
                     )
                     DecisionLogger.shared.logDecision(token: token, path: "DEEP", result: deepResult)
+                    DecisionProbe.record(.coreML, .decided, .modelTypedCorrectly, [
+                        DecisionProbe.name(deepHypothesis),
+                        DecisionProbe.percent(deepConf)
+                    ])
                     return deepResult
                 }
+                DecisionProbe.record(.coreML, .checked, .modelAgrees, [
+                    DecisionProbe.name(deepHypothesis),
+                    DecisionProbe.percent(deepConf)
+                ])
             }
         }
         
@@ -766,6 +873,7 @@ actor ConfidenceRouter {
            fm.modelAvailable,
            baseline.confidence < 0.70 && baseline.confidence >= 0.40 {
             logger.info("🤖 Foundation Model tiebreaker: baseline conf=\(baseline.confidence) in ambiguous range")
+            DecisionProbe.record(.foundationModel, .checked, .noCorrection)
             if let (fmHyp, fmConf) = await fm.predict(token, context: "") {
                 let isCorrection = fmHyp.rawValue.contains("From")
                 if isCorrection && fmConf > thresholds.correctionThreshold {
@@ -793,6 +901,11 @@ actor ConfidenceRouter {
                             )
                             DecisionLogger.shared.log("FM_TIEBREAKER: \(fmHyp.rawValue) conf=\(String(format: "%.2f", fmConf)) → \(DecisionLogger.tokenSummary(converted))")
                             DecisionLogger.shared.logDecision(token: token, path: "FM_CORRECTION", result: fmResult)
+                            DecisionProbe.record(.foundationModel, .decided, .modelAccepted, [
+                                DecisionProbe.name(fmHyp),
+                                DecisionProbe.percent(fmResult.confidence),
+                                converted
+                            ])
                             return fmResult
                         }
                     }
@@ -1190,7 +1303,9 @@ actor ConfidenceRouter {
 
         // If the token already looks like a valid word/phrase in its dominant script,
         // don't attempt layout correction (avoid false positives).
-        if wordValidator.confidence(for: token, language: dominant) >= DecisionPipeline.value(.heuristicSourceWordMax) {
+        let sourceWord = wordValidator.confidence(for: token, language: dominant)
+        if sourceWord >= DecisionPipeline.value(.heuristicSourceWordMax) {
+            DecisionProbe.record(.heuristic, .checked, .typedWordIsWord, [DecisionProbe.percent(sourceWord)])
             return nil
         }
 
@@ -1220,9 +1335,11 @@ actor ConfidenceRouter {
             }
         }
         
-        if validDecisions.count == 1 {
-            return validDecisions.first
+        if validDecisions.count == 1, let only = validDecisions.first {
+            DecisionProbe.record(.heuristic, .decided, .onlyWordConversion, [DecisionProbe.name(only.layoutHypothesis)])
+            return only
         }
+        DecisionProbe.record(.heuristic, .checked, .noSingleConversion)
         
         // If 0 or >1, let the standard path handle it (ambiguity resolution)
         return nil
@@ -1402,7 +1519,10 @@ actor ConfidenceRouter {
             }
         }
 
-        guard let best else { return nil }
+        guard let best else {
+            DecisionProbe.record(.scoredDecision, .checked, .scoredNothing)
+            return nil
+        }
 
         // Collision handler for Hebrew-QWERTY: the typed Hebrew token can be a valid Hebrew word,
         // but the mapped EN/RU candidate is also a very plausible, high-frequency word.
@@ -1423,6 +1543,7 @@ actor ConfidenceRouter {
                     // Fall through to the regular margin-based logic.
                 } else {
                     let conf: Double = mode == .manual ? 0.95 : 0.85
+                    DecisionProbe.record(.scoredDecision, .contributed, .scoredHebrewKeys, [best.converted, DecisionProbe.name(best.hypothesis)])
                     return LanguageDecision(language: best.target, layoutHypothesis: best.hypothesis, confidence: conf, scores: [:])
                 }
             }
@@ -1438,6 +1559,7 @@ actor ConfidenceRouter {
             // FIX: If target is Strong Accept (System Dictionary) and Source is Garbage,
             // we accept it regardless of Frequency Model (which might be sparse/missing).
             if best.isStrongAccept && !sourceLooksIntentionallyHebrew {
+                 DecisionProbe.record(.scoredDecision, .contributed, .scoredHebrewKeys, [best.converted, DecisionProbe.name(best.hypothesis)])
                  return LanguageDecision(language: best.target, layoutHypothesis: best.hypothesis, confidence: 0.95, scores: [:])
             }
             let sourceHasFinalArtefact = endsWithHebrewNonFinalForm(token)
@@ -1448,6 +1570,7 @@ actor ConfidenceRouter {
                best.targetFreq >= srcFreq + minFreqGain,
                (isShort || sourceHasFinalArtefact || srcWord < 0.90) {
                 let conf: Double = mode == .manual ? 0.90 : 0.82
+                DecisionProbe.record(.scoredDecision, .contributed, .scoredHebrewKeys, [best.converted, DecisionProbe.name(best.hypothesis)])
                 return LanguageDecision(language: best.target, layoutHypothesis: best.hypothesis, confidence: conf, scores: [:])
             }
         }
@@ -1465,8 +1588,30 @@ actor ConfidenceRouter {
             requiredMargin = max(0.10, requiredMargin - 0.10)
         }
         
-        guard best.q >= bestAsIs + requiredMargin else { return nil }
-        guard best.targetWord >= DecisionPipeline.value(.scoredTargetWordMin) else { return nil }
+        guard best.q >= bestAsIs + requiredMargin else {
+            DecisionProbe.record(.scoredDecision, .checked, .scoredNotEnough, [
+                best.converted,
+                DecisionProbe.name(best.hypothesis),
+                DecisionProbe.number(best.q),
+                DecisionProbe.number(bestAsIs + requiredMargin)
+            ])
+            return nil
+        }
+        guard best.targetWord >= DecisionPipeline.value(.scoredTargetWordMin) else {
+            DecisionProbe.record(.scoredDecision, .checked, .scoredNotAWord, [
+                best.converted,
+                DecisionProbe.percent(best.targetWord),
+                DecisionProbe.percent(DecisionPipeline.value(.scoredTargetWordMin))
+            ])
+            return nil
+        }
+        DecisionProbe.record(.scoredDecision, .contributed, .scoredBest, [
+            best.converted,
+            DecisionProbe.name(best.hypothesis),
+            DecisionProbe.number(best.q),
+            DecisionProbe.number(bestAsIs),
+            DecisionProbe.number(requiredMargin)
+        ])
 
         logger.debug("📊 scoredDecision: '\(token)' → '\(best.converted)' [\(best.hypothesis.rawValue)] q=\(best.q, format: .fixed(precision: 2)) asIs=\(bestAsIs, format: .fixed(precision: 2)) margin=\(requiredMargin, format: .fixed(precision: 2)) strong=\(best.isStrongAccept)")
 

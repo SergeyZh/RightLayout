@@ -1,11 +1,19 @@
 import SwiftUI
+import Combine
 
 /// The Algorithm page: how a typed word is checked, drawn as a flow of stages. Every
 /// part that takes part in the decision has a switch, and the parts with parameters
-/// let you change them.
+/// let you change them. A word typed into the test field at the top lights up the
+/// blocks that took part in its decision.
 struct AlgorithmSettingsView: View {
     @ObservedObject private var settings = SettingsManager.shared
+    @StateObject private var playground = DecisionPlaygroundModel()
     @State private var selectedNodeId: String?
+
+    /// What each block did with the word picked in the test field, or nil without one.
+    private var trace: [DecisionStep: [DecisionProbeEvent]]? {
+        playground.selectedWord.map { Dictionary(grouping: $0.events, by: \.step) }
+    }
 
     private var offCount: Int {
         AlgorithmDiagram.allNodes.filter { !isOn($0) }.count
@@ -38,11 +46,13 @@ struct AlgorithmSettingsView: View {
                 .disabled(isDefault)
             )
         ) {
+            PlaygroundPanel(model: playground)
+
             // Not a step of the flow: every stage looks words up in these.
             stageBox(AlgorithmDiagram.knowledgeSources, number: nil, isReference: true)
 
             VStack(spacing: 0) {
-                TypedWordBadge()
+                TypedWordBadge(word: playground.selectedWord?.typed)
 
                 FlowConnector()
 
@@ -51,10 +61,14 @@ struct AlgorithmSettingsView: View {
                     FlowConnector()
                 }
 
-                OutcomesRow()
+                OutcomesRow(word: playground.selectedWord)
             }
 
-            AlgorithmLegend()
+            AlgorithmLegend(showsTrace: trace != nil)
+        }
+        // A change of a switch or a parameter is seen at once in the test field.
+        .onReceive(settings.objectWillChange) { _ in
+            playground.schedule()
         }
     }
 
@@ -86,12 +100,14 @@ struct AlgorithmSettingsView: View {
                     selectedNodeId = selectedNodeId == node.id ? nil : node.id
                 }
             },
+            trace: trace,
             isReference: isReference
         ) {
             if let selected {
                 NodeInspector(
                     node: selected,
                     isOn: isOn(selected),
+                    events: trace.map { trace in selected.step.flatMap { trace[$0] } ?? [] },
                     onClose: {
                         withAnimation(Theme.Motion.fast) { selectedNodeId = nil }
                     }
@@ -172,6 +188,7 @@ private struct StageBox<Inspector: View>: View {
     let isTuned: (AlgorithmNode) -> Bool
     let binding: (AlgorithmNode) -> Binding<Bool>?
     let onSelect: (AlgorithmNode) -> Void
+    var trace: [DecisionStep: [DecisionProbeEvent]]?
     /// Drawn apart from the flow, as something the stages consult rather than pass through.
     var isReference = false
     @ViewBuilder var inspector: Inspector
@@ -216,6 +233,7 @@ private struct StageBox<Inspector: View>: View {
                         isTuned: isTuned(node),
                         isSelected: node.id == selectedNodeId,
                         binding: binding(node),
+                        events: trace.map { trace in node.step.flatMap { trace[$0] } ?? [] },
                         onSelect: { onSelect(node) }
                     )
                 }
@@ -274,10 +292,22 @@ private struct NodeCard: View {
     let isTuned: Bool
     let isSelected: Bool
     let binding: Binding<Bool>?
+    /// What the block did with the test field's word; nil without one.
+    let events: [DecisionProbeEvent]?
     let onSelect: () -> Void
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+    }
+
+    private var headline: DecisionProbeEvent? {
+        events.flatMap(TraceStyle.headline)
+    }
+
+    /// With a word in the test field, blocks it never reached fade out.
+    private var opacity: Double {
+        guard let events else { return isOn ? 1 : 0.75 }
+        return events.isEmpty ? 0.45 : 1
     }
 
     var body: some View {
@@ -314,6 +344,9 @@ private struct NodeCard: View {
                             .foregroundStyle(Theme.Color.textSecondary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
+                        if events != nil {
+                            TraceLine(event: headline, isOn: isOn)
+                        }
                     }
                     Spacer(minLength: 0)
                 }
@@ -340,13 +373,15 @@ private struct NodeCard: View {
         .overlay {
             if isSelected {
                 shape.stroke(Theme.Color.accent, lineWidth: 2)
+            } else if let headline {
+                shape.stroke(TraceStyle.color(headline.effect), lineWidth: headline.effect == .decided ? 2 : 1.5)
             } else if isOn {
                 shape.stroke(Theme.Color.borderSubtle, lineWidth: 1)
             } else {
                 shape.stroke(Theme.Color.borderStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
         }
-        .opacity(isOn ? 1 : 0.75)
+        .opacity(opacity)
     }
 }
 
@@ -355,6 +390,8 @@ private struct NodeCard: View {
 private struct NodeInspector: View {
     let node: AlgorithmNode
     let isOn: Bool
+    /// What the block did with the test field's word; nil without one.
+    let events: [DecisionProbeEvent]?
     let onClose: () -> Void
 
     var body: some View {
@@ -389,6 +426,29 @@ private struct NodeInspector: View {
                 Label(UIStrings.text("Turned off: words are checked without this part."), systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.Typography.meta())
                     .foregroundStyle(Theme.Color.warning)
+            }
+
+            if let events {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text(UIStrings.text("With the word from the test field"))
+                        .font(Theme.Typography.label())
+                        .foregroundStyle(Theme.Color.textPrimary)
+                    if events.isEmpty {
+                        Text(UIStrings.text(isOn ? "Not reached: an earlier block settled the decision, or the word didn't get here." : "Turned off"))
+                            .font(Theme.Typography.meta())
+                            .foregroundStyle(Theme.Color.textMeta)
+                    }
+                    ForEach(events) { event in
+                        Label {
+                            Text(TraceStyle.text(event))
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: TraceStyle.symbol(event.effect))
+                        }
+                        .font(Theme.Typography.meta())
+                        .foregroundStyle(TraceStyle.color(event.effect))
+                    }
+                }
             }
 
             if node.controls.isEmpty {
@@ -569,8 +629,11 @@ private struct ValueSlider: View {
 // MARK: - Flow decorations
 
 private struct TypedWordBadge: View {
+    /// The test field's word, shown in place of the generic label.
+    var word: String?
+
     var body: some View {
-        Label(UIStrings.text("Typed word"), systemImage: "character.cursor.ibeam")
+        Label(word.map { "\u{201C}\($0)\u{201D}" } ?? UIStrings.text("Typed word"), systemImage: "character.cursor.ibeam")
             .font(Theme.Typography.label())
             .foregroundStyle(Theme.Color.accent)
             .padding(.horizontal, Theme.Spacing.lg)
@@ -606,24 +669,68 @@ private struct FlowConnector: View {
 }
 
 private struct OutcomesRow: View {
+    /// The test field's word, whose outcome is lit.
+    var word: PlaygroundWord?
+
     var body: some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            ForEach(AlgorithmDiagram.outcomes) { outcome in
-                Label(UIStrings.text(outcome.title), systemImage: outcome.systemImage)
-                    .font(Theme.Typography.label())
+        VStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
+                ForEach(AlgorithmDiagram.outcomes) { outcome in
+                    let isResult = word.map { outcome.id == TraceStyle.outcomeTitle($0.outcome) } ?? false
+                    Label(UIStrings.text(outcome.title), systemImage: outcome.systemImage)
+                        .font(Theme.Typography.label())
+                        .foregroundStyle(isResult ? SwiftUI.Color.white : Theme.Color.textPrimary)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .frame(maxWidth: .infinity)
+                        .background(isResult ? Theme.Color.success : Theme.Color.surfaceRaised, in: Capsule())
+                        .overlay { Capsule().stroke(isResult ? Theme.Color.success : Theme.Color.borderSubtle, lineWidth: 1) }
+                        .opacity(word == nil || isResult ? 1 : 0.5)
+                }
+            }
+
+            if let word {
+                Text(TraceStyle.resultText(word))
+                    .font(Theme.Typography.mono())
                     .foregroundStyle(Theme.Color.textPrimary)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.sm)
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
-                    .background(Theme.Color.surfaceRaised, in: Capsule())
-                    .overlay { Capsule().stroke(Theme.Color.borderSubtle, lineWidth: 1) }
             }
         }
     }
 }
 
 private struct AlgorithmLegend: View {
+    var showsTrace = false
+
     var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            symbols
+            if showsTrace {
+                HStack(spacing: Theme.Spacing.lg) {
+                    ForEach([DecisionEffect.decided, .contributed, .rejected, .checked], id: \.self) { effect in
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: TraceStyle.symbol(effect))
+                                .font(.system(size: 10))
+                                .foregroundStyle(TraceStyle.color(effect))
+                            Text(UIStrings.text(TraceStyle.title(effect)))
+                        }
+                    }
+                    HStack(spacing: Theme.Spacing.xs) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Theme.Color.borderSubtle)
+                            .frame(width: 16, height: 10)
+                            .opacity(0.45)
+                        Text(UIStrings.text("Not reached"))
+                    }
+                }
+                .font(Theme.Typography.meta())
+                .foregroundStyle(Theme.Color.textMeta)
+            }
+        }
+    }
+
+    private var symbols: some View {
         HStack(spacing: Theme.Spacing.lg) {
             legendItem("bolt.fill", "Can settle the decision on its own")
             legendItem("lock.fill", "Always on")
@@ -644,6 +751,199 @@ private struct AlgorithmLegend: View {
             Image(systemName: systemImage)
                 .font(.system(size: 10))
             Text(UIStrings.text(title))
+        }
+    }
+}
+
+// MARK: - Test field
+
+private struct PlaygroundPanel: View {
+    @ObservedObject var model: DecisionPlaygroundModel
+
+    var body: some View {
+        WorkbenchSection(
+            title: "Try a word",
+            detail: "Type a word or a phrase. Each word is checked the way it would be while you type, with the settings below; the diagram shows what every block did with the selected word. Nothing is corrected or learned."
+        ) {
+            HStack(spacing: Theme.Spacing.sm) {
+                TextField(UIStrings.text("For example: ghbdtn rfr ltkf"), text: $model.text)
+                    .textFieldStyle(.roundedBorder)
+                    .font(Theme.Typography.mono())
+                if model.isChecking {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                if !model.text.isEmpty {
+                    Button {
+                        model.text = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Theme.Color.textMeta)
+                    }
+                    .buttonStyle(.plain)
+                    .help(UIStrings.text("Clear"))
+                }
+            }
+
+            HStack(spacing: Theme.Spacing.lg) {
+                Picker("", selection: $model.environment) {
+                    Text(UIStrings.text("App shows its text")).tag(EditingEnvironment.accessibility)
+                    Text(UIStrings.text("App hides its text")).tag(EditingEnvironment.nonAccessibility)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 340)
+                .help(UIStrings.text("Apps such as Claude, Slack or VS Code don't let RightLayout read their text, which makes corrections more careful."))
+
+                Toggle(UIStrings.text("Ends with Enter"), isOn: $model.endsWithEnter)
+                    .toggleStyle(.checkbox)
+                    .font(Theme.Typography.body())
+
+                Spacer()
+            }
+
+            if !model.words.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        ForEach(model.words) { word in
+                            WordChip(
+                                word: word,
+                                isSelected: word.id == model.selectedWord?.id,
+                                onSelect: { model.selectedWordId = word.id }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct WordChip: View {
+    let word: PlaygroundWord
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: Theme.Spacing.xs) {
+                Circle()
+                    .fill(TraceStyle.color(word.outcome))
+                    .frame(width: 7, height: 7)
+                Text(word.shown == word.typed ? word.typed : "\(word.typed) → \(word.shown)")
+                    .font(Theme.Typography.mono())
+                    .foregroundStyle(Theme.Color.textPrimary)
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.xs)
+            .background(Theme.Color.surfaceRaised, in: Capsule())
+            .overlay {
+                Capsule().stroke(isSelected ? Theme.Color.accent : Theme.Color.borderSubtle, lineWidth: isSelected ? 2 : 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .help(UIStrings.text(TraceStyle.outcomeTitle(word.outcome)))
+    }
+}
+
+/// The line on a block that says what it did with the test field's word.
+private struct TraceLine: View {
+    let event: DecisionProbeEvent?
+    let isOn: Bool
+
+    var body: some View {
+        if let event {
+            HStack(alignment: .top, spacing: Theme.Spacing.xs) {
+                Image(systemName: TraceStyle.symbol(event.effect))
+                    .font(.system(size: 10))
+                Text(TraceStyle.text(event))
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(TraceStyle.color(event.effect))
+            .padding(.top, Theme.Spacing.xxs)
+        } else {
+            Text(UIStrings.text(isOn ? "Not reached" : "Turned off"))
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.Color.textMeta)
+                .padding(.top, Theme.Spacing.xxs)
+        }
+    }
+}
+
+/// How the trace of a word is drawn and worded.
+enum TraceStyle {
+    /// The event a block is summed up by: its strongest effect, the latest of those.
+    static func headline(_ events: [DecisionProbeEvent]) -> DecisionProbeEvent? {
+        guard let strongest = events.map(\.effect).max() else { return nil }
+        return events.last { $0.effect == strongest }
+    }
+
+    static func text(_ event: DecisionProbeEvent) -> String {
+        let format = UIStrings.text(event.note.rawValue)
+        guard !event.arguments.isEmpty else { return format }
+        return String(format: format, locale: Locale.current, arguments: event.arguments.map { $0 as CVarArg })
+    }
+
+    static func symbol(_ effect: DecisionEffect) -> String {
+        switch effect {
+        case .checked: return "checkmark.circle"
+        case .contributed: return "plus.circle.fill"
+        case .rejected: return "xmark.circle.fill"
+        case .decided: return "flag.fill"
+        }
+    }
+
+    static func color(_ effect: DecisionEffect) -> SwiftUI.Color {
+        switch effect {
+        case .checked: return Theme.Color.textSecondary
+        case .contributed: return Theme.Color.accent
+        case .rejected: return Theme.Color.warning
+        case .decided: return Theme.Color.success
+        }
+    }
+
+    static func title(_ effect: DecisionEffect) -> String {
+        switch effect {
+        case .checked: return "Checked, no effect"
+        case .contributed: return "Contributed"
+        case .rejected: return "Proposed, rejected"
+        case .decided: return "Decided"
+        }
+    }
+
+    static func color(_ outcome: PlaygroundWord.Outcome) -> SwiftUI.Color {
+        switch outcome {
+        case .replace: return Theme.Color.success
+        case .suggest: return Theme.Color.accent
+        case .hotkeyOnly: return Theme.Color.warning
+        case .leave: return Theme.Color.textMeta
+        }
+    }
+
+    /// The title of the outcome pill (`AlgorithmDiagram.outcomes`).
+    static func outcomeTitle(_ outcome: PlaygroundWord.Outcome) -> String {
+        switch outcome {
+        case .replace: return "Replace"
+        case .suggest: return "Suggest"
+        case .hotkeyOnly: return "Hotkey only"
+        case .leave: return "Leave as typed"
+        }
+    }
+
+    static func resultText(_ word: PlaygroundWord) -> String {
+        let confidence = word.confidence.map { " · " + DecisionProbe.percent($0) } ?? ""
+        switch word.outcome {
+        case .replace:
+            return "\(word.typed) → \(word.shown)\(confidence)"
+        case .suggest, .hotkeyOnly:
+            if let proposed = word.proposed {
+                return "\(word.typed) → \(proposed)?\(confidence)"
+            }
+            return word.typed + confidence
+        case .leave:
+            return word.shown == word.typed ? word.typed : "\(word.typed) → \(word.shown)"
         }
     }
 }
