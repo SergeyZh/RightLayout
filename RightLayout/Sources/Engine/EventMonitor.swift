@@ -490,6 +490,12 @@ public final class EventMonitor {
         let flags = event.flags
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
 
+        // Excluded apps are never monitored: the manual trigger does nothing there either.
+        if isActiveAppExcluded {
+            cancelStandaloneOptionTap()
+            return Unmanaged.passUnretained(event)
+        }
+
         if settings.hotkeyEnabled, let triggerMask = manualTriggerModifierMask(forKeyCode: keyCode) {
             handleManualTriggerFlagsChanged(keyCode: keyCode, flags: flags, modifierMask: triggerMask)
             return Unmanaged.passUnretained(event)
@@ -581,6 +587,13 @@ public final class EventMonitor {
         if heldEnter != nil {
             releaseHeldEnterEarly(proxy: proxy)
         }
+
+        // Excluded apps are never monitored: nothing typed there is tracked or corrected.
+        if isActiveAppExcluded {
+            forgetSessionInExcludedApp()
+            return Unmanaged.passUnretained(event)
+        }
+
         let isReturnKey = Self.returnKeyCodes.contains(keyCode)
         if !isReturnKey {
             passNextEnter = false
@@ -760,6 +773,29 @@ public final class EventMonitor {
         }
     }
 
+    /// The app being typed in. Until another app is activated, the one frontmost at launch.
+    private var activeAppBundleId: String {
+        if !lastActiveApp.isEmpty { return lastActiveApp }
+        return NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+    }
+
+    private var isActiveAppExcluded: Bool {
+        !settings.excludedApps.isEmpty && settings.isExcluded(bundleId: activeAppBundleId)
+    }
+
+    /// Drops what was tracked before the app became excluded (it was added to the list
+    /// while in use), so the manual trigger can't convert it later.
+    private func forgetSessionInExcludedApp() {
+        cancelStandaloneOptionTap()
+        clearTransliterationHint()
+        guard !inputSession.typedToken.isEmpty
+                || !inputSession.phraseContext.isEmpty
+                || lastCommittedToken != nil else { return }
+        clearPendingCorrectionTracking()
+        Task { await engine.resetCycling() }
+        resetSession(reason: "Excluded App", clearPhraseContext: true)
+    }
+
     private func shouldHoldEnter(now: Date) -> Bool {
         if passNextEnter {
             passNextEnter = false
@@ -767,7 +803,7 @@ public final class EventMonitor {
         }
         guard settings.holdEnterForCorrection,
               settings.isEnabled,
-              !settings.isExcluded(bundleId: lastActiveApp),
+              !isActiveAppExcluded,
               inputSession.typedToken.contains(where: \.isLetter) else {
             return false
         }
@@ -906,6 +942,15 @@ public final class EventMonitor {
         }
     }
 
+    private func keepCommittedWordAsTyped(token: String, separator: String) {
+        updatePhraseBuffer(with: splitBufferContent(token).token)
+        lastCommittedToken = CommittedTokenContext(token: token, separator: separator)
+        clearTransliterationHint()
+        lastCorrectionTrackingId = nil
+        lastCorrectionTime = .distantPast
+        Task { await engine.resetCycling() }
+    }
+
     /// Returns `true` if the word was replaced.
     @discardableResult
     private func processCommittedBoundary(
@@ -923,6 +968,13 @@ public final class EventMonitor {
         runtimeState = .boundaryPending
         guard generation == boundaryGeneration else {
             preserveCommittedBoundaryIfNeeded(token: token, separator: separator)
+            return false
+        }
+
+        // With automatic correction off the word stays as typed, but is still tracked so
+        // the manual trigger can convert it.
+        guard settings.isEnabled else {
+            keepCommittedWordAsTyped(token: token, separator: separator)
             return false
         }
 
@@ -946,14 +998,17 @@ public final class EventMonitor {
             ]
         )
         let editingEnvironment = hostProfile.editingEnvironment
+        let appBundleId = isSyntheticHost ? lastActiveApp : bundleId
 
-        if await engine.checkForRetype(text: token, bundleId: isSyntheticHost ? lastActiveApp : bundleId) {
-            updatePhraseBuffer(with: splitBufferContent(token).token)
-            lastCommittedToken = CommittedTokenContext(token: token, separator: separator)
-            clearTransliterationHint()
-            lastCorrectionTrackingId = nil
-            lastCorrectionTime = .distantPast
-            Task { await engine.resetCycling() }
+        // The focused field can belong to an excluded app whose activation hasn't been
+        // handled yet.
+        if settings.isExcluded(bundleId: appBundleId) {
+            forgetSessionInExcludedApp()
+            return false
+        }
+
+        if await engine.checkForRetype(text: token, bundleId: appBundleId) {
+            keepCommittedWordAsTyped(token: token, separator: separator)
             return false
         }
 
