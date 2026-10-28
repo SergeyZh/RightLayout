@@ -26,6 +26,8 @@ struct AlgorithmNode: Identifiable {
         case verifier
         case learning
         case transliterationHints
+        case layoutSwitch
+        case correctionSound
     }
 
     /// A value of the part that can be changed.
@@ -359,8 +361,7 @@ enum AlgorithmDiagram {
                         .parameter(.policyShortAutoMargin),
                         .minimumWordLength,
                         .blindConfidence,
-                        .parameter(.policyBlindHintConfidence),
-                        .blindReplayDelay
+                        .parameter(.policyBlindHintConfidence)
                     ]
                 ),
                 AlgorithmNode(
@@ -450,6 +451,78 @@ enum AlgorithmDiagram {
                     detail: "A Latin word that looks like transliterated Russian gets a hint you can apply with the hotkey. Never applied automatically.",
                     systemImage: "character.book.closed",
                     toggle: .setting(.transliterationHints)
+                )
+            ]
+        ),
+        AlgorithmStage(
+            id: "replacing",
+            title: "Replacing the word",
+            detail: "How the correction is put into the app you type in, and where the caret ends up. The kind of app decides how.",
+            nodes: [
+                AlgorithmNode(
+                    id: "appKind",
+                    title: "Kind of app",
+                    summary: "Reads its text, ignores writes, or hides it",
+                    detail: "Apps such as TextEdit, Notes or Mail let RightLayout read and change their text through Accessibility. Slack and other Chromium-based apps show their text but ignore changes made that way. Claude, VS Code and terminals hide their text; they are known to take retyping. Other apps that hide their text are left to the hotkey, and nothing is changed in password fields.",
+                    systemImage: "macwindow",
+                    toggle: .alwaysOn
+                ),
+                AlgorithmNode(
+                    id: "heldKeys",
+                    title: "Keys typed meanwhile",
+                    summary: "Wait, then follow the correction",
+                    detail: "Keys you press while the word is being replaced are held and let through afterwards, in order and in the new layout, so they can't land in the middle of the retyped word.",
+                    systemImage: "hourglass",
+                    toggle: .alwaysOn
+                ),
+                AlgorithmNode(
+                    id: "fieldCheck",
+                    title: "Checking the field",
+                    summary: "The word must be right before the caret",
+                    detail: "Before anything is changed, the text before the caret is read: it must end with the typed word and its space. A slow app (Slack in a long message) is read again for up to a quarter of a second. If the field shows something else, or the word is the end of a longer one, the word stays as typed and the hotkey still works.",
+                    systemImage: "text.viewfinder",
+                    toggle: .alwaysOn
+                ),
+                AlgorithmNode(
+                    id: "accessibilityWrite",
+                    title: "Writing in place",
+                    summary: "Exactly the checked characters are replaced",
+                    detail: "The checked characters are replaced through Accessibility and the field is read back. The caret goes after the new word and its space. An app that reports the change as made but leaves the text as it was is retyped from then on.",
+                    systemImage: "character.cursor.ibeam",
+                    toggle: .alwaysOn
+                ),
+                AlgorithmNode(
+                    id: "verifiedRetype",
+                    title: "Verified retyping",
+                    summary: "Backspace and retype, then read back",
+                    detail: "The field is read again and the caret must be right after the word (Slack can report it a character or two behind; then the end of the text counts). The word and its space are erased with Backspace and the correction typed, followed by what you typed meanwhile. The field is read back up to five times to confirm; the caret ends up after the retyped text.",
+                    systemImage: "delete.backward",
+                    toggle: .alwaysOn
+                ),
+                AlgorithmNode(
+                    id: "blindRetype",
+                    title: "Blind retyping",
+                    summary: "Backspace and retype without seeing the text",
+                    detail: "Where the text can't be read, the word is erased with Backspace and retyped without a check, so only in apps known to take it, right after the word was typed, for words of up to 18 letters with high confidence, and never when the word ends a line. Elsewhere the word stays as typed and the hotkey still works.",
+                    systemImage: "eye.slash",
+                    toggle: .alwaysOn,
+                    controls: [.blindConfidence, .blindReplayDelay]
+                ),
+                AlgorithmNode(
+                    id: "layoutSwitch",
+                    title: "Switching the layout",
+                    summary: "To the language of the correction",
+                    detail: "The layout is switched before the word is replaced, so what you type next already comes in the right language, and switched back if the replacement fails. After blind retyping only in apps known to take it. An emoticon leaves the layout alone.",
+                    systemImage: "globe.badge.chevron.backward",
+                    toggle: .setting(.layoutSwitch)
+                ),
+                AlgorithmNode(
+                    id: "correctionSound",
+                    title: "Sound",
+                    summary: "A short sound on each correction",
+                    detail: "Lets you notice a correction without looking at the text. The sound and its volume are chosen on the General page.",
+                    systemImage: "speaker.wave.2",
+                    toggle: .setting(.correctionSound)
                 )
             ]
         )

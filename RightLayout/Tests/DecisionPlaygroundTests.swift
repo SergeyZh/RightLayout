@@ -36,15 +36,24 @@ final class DecisionPlaygroundTests: XCTestCase {
         engine = nil
     }
 
-    private func check(_ text: String, endsWithEnter: Bool = false) async -> [PlaygroundWord] {
+    private func check(
+        _ text: String,
+        in app: PlaygroundApp = .readsText,
+        endsWithEnter: Bool = false,
+        settings: PlaygroundApplySettings = PlaygroundApplySettings()
+    ) async -> [PlaygroundWord] {
         await DecisionPlayground.check(
             text,
             engine: engine,
             knowledge: Self.knowledge,
-            environment: .accessibility,
+            app: app,
             endsWithEnter: endsWithEnter,
-            holdsEnter: true
+            settings: settings
         )
+    }
+
+    private func steps(_ word: PlaygroundWord, _ effect: DecisionEffect) -> [DecisionStep] {
+        word.events.filter { $0.effect == effect }.map(\.step)
     }
 
     // MARK: The diagram and the probe name the same blocks
@@ -128,6 +137,53 @@ final class DecisionPlaygroundTests: XCTestCase {
         let second = await check("ghbdtn")
         XCTAssertEqual(first.map(\.shown), second.map(\.shown))
         XCTAssertEqual(first.map(\.outcome), second.map(\.outcome))
+    }
+
+    // MARK: Replacing the word
+
+    func testAnAppThatReadsItsTextIsWrittenInPlace() async {
+        let word = await check("ghbdtn")[0]
+        XCTAssertTrue(steps(word, .decided).contains(.accessibilityWrite), "\(word.events)")
+        XCTAssertTrue(word.events.contains { $0.step == .fieldCheck && $0.arguments == ["ghbdtn␣"] })
+        XCTAssertTrue(word.events.contains { $0.step == .layoutSwitch && $0.note == .switchesBefore && $0.arguments == ["RU"] })
+    }
+
+    func testSlackIsRetypedAndReadBack() async {
+        let word = await check("ghbdtn", in: .slack)[0]
+        XCTAssertEqual(word.outcome, .replace)
+        XCTAssertTrue(steps(word, .rejected).contains(.accessibilityWrite))
+        let retype = word.events.first { $0.step == .verifiedRetype }
+        XCTAssertEqual(retype?.effect, .decided)
+        XCTAssertEqual(retype?.arguments, ["7", "привет␣"], "Erases the word and its space, then types both")
+    }
+
+    func testAnAppThatHidesItsTextIsRetypedBlind() async {
+        let word = await check("ghbdtn", in: .hidesText)[0]
+        XCTAssertEqual(word.outcome, .replace, "\(word.events)")
+        XCTAssertTrue(steps(word, .decided).contains(.blindRetype))
+        XCTAssertFalse(word.events.contains { $0.step == .accessibilityWrite || $0.step == .verifiedRetype })
+    }
+
+    func testAnUnknownAppThatHidesItsTextIsLeftToTheHotkey() async {
+        let word = await check("ghbdtn", in: .unknownHidden)[0]
+        XCTAssertEqual(word.outcome, .hotkeyOnly)
+        XCTAssertEqual(word.shown, "ghbdtn")
+        XCTAssertEqual(word.proposed, "привет")
+        XCTAssertTrue(steps(word, .rejected).contains(.blindRetype))
+        XCTAssertTrue(word.events.contains { $0.step == .layoutSwitch && $0.note == .layoutStays })
+    }
+
+    func testAWordEndingALineIsNotRetypedBlind() async {
+        var settings = PlaygroundApplySettings()
+        settings.holdsEnter = false
+        let word = await check("ghbdtn", in: .hidesText, endsWithEnter: true, settings: settings)[0]
+        XCTAssertEqual(word.outcome, .hotkeyOnly)
+        XCTAssertTrue(word.events.contains { $0.step == .blindRetype && $0.note == .notRetypedNewline })
+    }
+
+    func testAHeldEnterIsNotRetypedYet() async {
+        let word = await check("ghbdtn", in: .slack, endsWithEnter: true)[0]
+        XCTAssertEqual(word.events.first { $0.step == .verifiedRetype }?.arguments, ["6", "привет"])
     }
 
     func testABlockTurnedOffReportsNothing() async {

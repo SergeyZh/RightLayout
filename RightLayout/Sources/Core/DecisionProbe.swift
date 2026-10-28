@@ -39,6 +39,14 @@ enum DecisionStep: String, CaseIterable, Sendable {
     case deferredWords
     case previousWordCascade
     case transliterationHints
+    case appKind
+    case fieldCheck
+    case accessibilityWrite
+    case verifiedRetype
+    case blindRetype
+    case heldKeys
+    case layoutSwitch
+    case correctionSound
 }
 
 /// What a block did with the word.
@@ -153,6 +161,29 @@ enum ProbeNote: String, CaseIterable, Sendable {
     case hint = "Hint: \"%@\""
     case appliedBeforeSending = "Applied before sending: \"%@\""
     case nothingBeforeSending = "Nothing to fix before sending"
+
+    // Replacing the word
+    case appReadsText = "Reads its text through Accessibility"
+    case appIgnoresWrites = "Shows its text, but ignores writes through Accessibility"
+    case appTakesRetyping = "Hides its text; known to take retyping"
+    case appUnknownHidden = "Hides its text and isn't known to take retyping"
+    case fieldChecked = "Checks that \"%@\" is right before the caret"
+    case fieldUnreadable = "The text can't be read: nothing to check"
+    case writtenInPlace = "Puts \"%@\" in place of \"%@\"; the caret goes after it"
+    case writeIgnored = "The app ignores this: retyped instead"
+    case retypedVerified = "⌫ × %@, then types \"%@\"; reads the field back to confirm"
+    case retypedBlind = "⌫ × %@, then types \"%@\" without seeing the result"
+    case notRetypedNewline = "The word ends a line: not retyped blind"
+    case notRetypedLength = "%@ letters: not retyped blind (needs %@ to 18)"
+    case notRetypedConfidence = "Confidence %@ below %@: not retyped blind"
+    case notRetypedUnknownApp = "An unknown app that hides its text: not retyped"
+    case keysWait = "Keys typed meanwhile wait, then follow the replacement"
+    case switchesBefore = "Switches to %@ before replacing, so the next keys land in it"
+    case switchesAfterRetype = "Switches to %@: this app takes retyping"
+    case layoutStaysEmoticon = "An emoticon: the layout stays"
+    case layoutStays = "The word stays: so does the layout"
+    case playsSound = "Plays \"%@\""
+    case enterSentUnchanged = "The word stays, and Enter is sent"
 
     // Knowledge sources
     case knownIn = "\"%@\" (%@): yes"

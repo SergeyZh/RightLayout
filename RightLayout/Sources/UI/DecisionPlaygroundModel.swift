@@ -7,7 +7,7 @@ final class DecisionPlaygroundModel: ObservableObject {
     @Published var text = "" {
         didSet { schedule() }
     }
-    @Published var environment: EditingEnvironment = .accessibility {
+    @Published var app: PlaygroundApp = .readsText {
         didSet { schedule() }
     }
     @Published var endsWithEnter = false {
@@ -69,9 +69,9 @@ final class DecisionPlaygroundModel: ObservableObject {
                 text,
                 engine: engine,
                 knowledge: knowledge,
-                environment: environment,
+                app: app,
                 endsWithEnter: endsWithEnter,
-                holdsEnter: settings.holdEnterForCorrection
+                settings: applySettings
             )
             if !needsRerun, text == self.text {
                 words = result
@@ -80,6 +80,19 @@ final class DecisionPlaygroundModel: ObservableObject {
                 }
             }
         } while needsRerun
+    }
+
+    private var applySettings: PlaygroundApplySettings {
+        PlaygroundApplySettings(
+            holdsEnter: settings.holdEnterForCorrection,
+            switchesLayout: settings.autoSwitchLayout,
+            soundName: settings.correctionSoundEnabled ? UIStrings.text(settings.correctionSound.displayName) : nil,
+            blindConfidence: CorrectionDecisionPolicy.blindAutoApplyThreshold(
+                preset: settings.behaviorPreset,
+                limits: settings.autoCorrectionLimits
+            ),
+            minimumWordLength: settings.minAutoCorrectWordLength
+        )
     }
 
     /// Loading the models takes a moment, so it is done off the main thread, once.
