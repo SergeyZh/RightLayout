@@ -661,7 +661,6 @@
 "Words are checked without them: more mistakes may stay uncorrected, or correct words may be changed." = "Слова проверяются без них: больше ошибок может остаться неисправленными, или могут измениться правильные слова.";
 "Algorithm" = "Алгоритм";
 "How RightLayout decides whether a word was typed in the wrong layout. Click a block to see what it does and to tune it; the switch turns it off." = "Как RightLayout решает, набрано ли слово не в той раскладке. Нажмите на блок, чтобы узнать, что он делает, и настроить его; переключатель его выключает.";
-"used by every stage" = "используются всеми этапами";
 "%d of %d on" = "включено %d из %d";
 "Can settle the decision on its own" = "Может принять решение сам";
 "Parameters changed" = "Параметры изменены";
@@ -680,3 +679,4 @@
 "Turned off" = "Выключено";
 "Turn off" = "Выключить";
 "Turn on" = "Включить";
+"Used by every stage" = "Используются всеми этапами";

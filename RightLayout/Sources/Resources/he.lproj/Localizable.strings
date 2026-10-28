@@ -540,7 +540,6 @@
 "Algorithm" = "אלגוריתם";
 "How RightLayout decides whether a word was typed in the wrong layout. Click a block to see what it does and to tune it; the switch turns it off." = "איך RightLayout מחליט אם מילה הוקלדה בפריסה שגויה. לחצו על בלוק כדי לראות מה הוא עושה ולכוונן אותו; המתג מכבה אותו.";
 "Restore defaults" = "שחזור ברירות מחדל";
-"used by every stage" = "משמשים את כל השלבים";
 "%d of %d on" = "%d מתוך %d פעילים";
 "Can settle the decision on its own" = "יכול להכריע לבד";
 "Parameters changed" = "פרמטרים שונו";
@@ -567,3 +566,4 @@
 "Turned off" = "כבוי";
 "Turn off" = "כיבוי";
 "Turn on" = "הפעלה";
+"Used by every stage" = "משמשים את כל השלבים";

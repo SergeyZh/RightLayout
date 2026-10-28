@@ -38,14 +38,13 @@ struct AlgorithmSettingsView: View {
                 .disabled(isDefault)
             )
         ) {
+            // Not a step of the flow: every stage looks words up in these.
+            stageBox(AlgorithmDiagram.knowledgeSources, number: nil, isReference: true)
+
             VStack(spacing: 0) {
                 TypedWordBadge()
 
                 FlowConnector()
-
-                stageBox(AlgorithmDiagram.knowledgeSources, number: nil)
-
-                FlowConnector(dashed: true, label: "used by every stage")
 
                 ForEach(Array(AlgorithmDiagram.stages.enumerated()), id: \.element.id) { index, stage in
                     stageBox(stage, number: index + 1)
@@ -72,7 +71,7 @@ struct AlgorithmSettingsView: View {
     }
 
     @ViewBuilder
-    private func stageBox(_ stage: AlgorithmStage, number: Int?) -> some View {
+    private func stageBox(_ stage: AlgorithmStage, number: Int?, isReference: Bool = false) -> some View {
         let selected = stage.nodes.first { $0.id == selectedNodeId }
         StageBox(
             stage: stage,
@@ -86,7 +85,8 @@ struct AlgorithmSettingsView: View {
                 withAnimation(Theme.Motion.fast) {
                     selectedNodeId = selectedNodeId == node.id ? nil : node.id
                 }
-            }
+            },
+            isReference: isReference
         ) {
             if let selected {
                 NodeInspector(
@@ -172,6 +172,8 @@ private struct StageBox<Inspector: View>: View {
     let isTuned: (AlgorithmNode) -> Bool
     let binding: (AlgorithmNode) -> Binding<Bool>?
     let onSelect: (AlgorithmNode) -> Void
+    /// Drawn apart from the flow, as something the stages consult rather than pass through.
+    var isReference = false
     @ViewBuilder var inspector: Inspector
 
     private var columns: [GridItem] {
@@ -184,9 +186,14 @@ private struct StageBox<Inspector: View>: View {
                 StageNumber(number: number)
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    Text(UIStrings.text(stage.title))
-                        .font(Theme.Typography.bodyStrong())
-                        .foregroundStyle(Theme.Color.textPrimary)
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text(UIStrings.text(stage.title))
+                            .font(Theme.Typography.bodyStrong())
+                            .foregroundStyle(Theme.Color.textPrimary)
+                        if isReference {
+                            StatusChip(title: "Used by every stage", severity: .info)
+                        }
+                    }
                     Text(UIStrings.text(stage.detail))
                         .font(Theme.Typography.meta())
                         .foregroundStyle(Theme.Color.textSecondary)
@@ -218,7 +225,23 @@ private struct StageBox<Inspector: View>: View {
         }
         .padding(Theme.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .controlSurface(level: 1)
+        .background {
+            if isReference {
+                RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
+                    .fill(Theme.Color.pageBackgroundSecondary)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
+                            .stroke(Theme.Color.borderStrong, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                    }
+            } else {
+                RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
+                    .fill(Theme.Color.surfaceRaised)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
+                            .stroke(Theme.Color.borderSubtle, lineWidth: 1)
+                    }
+            }
+        }
     }
 }
 
@@ -559,27 +582,14 @@ private struct TypedWordBadge: View {
 
 /// The arrow from one stage to the next.
 private struct FlowConnector: View {
-    var dashed = false
-    var label: String?
-
     var body: some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            VStack(spacing: 0) {
-                Line()
-                    .stroke(
-                        Theme.Color.borderStrong,
-                        style: StrokeStyle(lineWidth: 2, dash: dashed ? [4, 3] : [])
-                    )
-                    .frame(width: 2, height: 16)
-                Image(systemName: "arrowtriangle.down.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(Theme.Color.borderStrong)
-            }
-            if let label {
-                Text(UIStrings.text(label))
-                    .font(Theme.Typography.meta())
-                    .foregroundStyle(Theme.Color.textMeta)
-            }
+        VStack(spacing: 0) {
+            Line()
+                .stroke(Theme.Color.borderStrong, lineWidth: 2)
+                .frame(width: 2, height: 16)
+            Image(systemName: "arrowtriangle.down.fill")
+                .font(.system(size: 9))
+                .foregroundStyle(Theme.Color.borderStrong)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Theme.Spacing.xxs)

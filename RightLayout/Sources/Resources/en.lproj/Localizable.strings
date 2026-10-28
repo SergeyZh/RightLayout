@@ -661,7 +661,6 @@
 "Words are checked without them: more mistakes may stay uncorrected, or correct words may be changed." = "Words are checked without them: more mistakes may stay uncorrected, or correct words may be changed.";
 "Algorithm" = "Algorithm";
 "How RightLayout decides whether a word was typed in the wrong layout. Click a block to see what it does and to tune it; the switch turns it off." = "How RightLayout decides whether a word was typed in the wrong layout. Click a block to see what it does and to tune it; the switch turns it off.";
-"used by every stage" = "used by every stage";
 "%d of %d on" = "%d of %d on";
 "Can settle the decision on its own" = "Can settle the decision on its own";
 "Parameters changed" = "Parameters changed";
@@ -680,3 +679,4 @@
 "Turned off" = "Turned off";
 "Turn off" = "Turn off";
 "Turn on" = "Turn on";
+"Used by every stage" = "Used by every stage";
