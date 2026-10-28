@@ -109,6 +109,43 @@ self.newSetting = UserDefaults.standard.object(forKey: "newSetting") as? Bool ??
 Toggle("New Setting", isOn: $settings.newSetting)
 ```
 
+### Changing How Words Are Decided
+
+Settings → Algorithm draws the word check as a diagram, and its test field shows what
+every block did with a typed word. The diagram is only right while it follows the code,
+so **every change to the algorithm must be checked against it**: whether a word is
+corrected, suggested or left alone, and how the correction is put into the text.
+
+That covers, among others, `Core/ConfidenceRouter.swift`, `Core/WordValidator.swift`,
+`Core/WordFrequencyModel.swift`, `Core/NgramLanguageModel.swift`, `Core/LayoutMapper.swift`,
+`Core/WrongLayoutShorthand.swift`, `Engine/CorrectionEngine*.swift`,
+`Engine/CorrectionDecisionPolicy.swift`, `Personalization/RiskController.swift`, the
+replacement path of `Engine/EventMonitor.swift`, `Services/SelectionReplacementService.swift`,
+`Engine/RuntimeProfiles.swift`, and `Resources/thresholds.json` and `language_data.json`.
+
+When you change one of them, check and update as needed:
+
+1. **The blocks** (`UI/AlgorithmDiagram.swift`): a new step gets a block in its stage, a
+   removed one loses it, and the titles, summaries and descriptions say what the code does
+   now. Mark a block `decidesAlone` if it can end the check.
+2. **Its switch** (`Core/DecisionPipeline.swift`): a new part of the decision gets a
+   `DecisionComponent` and is skipped when that is off; a part with a setting of its own
+   uses `AlgorithmNode.SettingSwitch`.
+3. **Its parameters**: a threshold or margin worth tuning becomes a `DecisionParameter`
+   with the value the code had as its default; nothing changes until someone moves it.
+4. **The trace** (`Core/DecisionProbe.swift`): the new or changed step reports what it did
+   with `DecisionProbe.record`, under its `DecisionStep`. Steps of the replacement are
+   walked through in `Engine/DecisionPlayground.swift`, with the same rules as the monitor.
+5. **Translations**: every new text of the diagram and every `ProbeNote` in `en`, `ru` and
+   `he` `Localizable.strings`, with the same `%@` placeholders.
+6. **The description** in `docs/word-check-algorithm.ru.md`.
+7. **The tests**: `DecisionPipelineTests` and `DecisionPlaygroundTests` check that every
+   component, parameter and step has its block and its translations; add a test that the
+   test field reports the change.
+
+Then type a few words into the test field and see that the diagram tells the story the
+code does. If a change needs none of this, say why in the pull request.
+
 ## Testing
 
 ### Running Tests
@@ -241,6 +278,7 @@ the section, the PR title stands in. The header above the changes is in
 - [ ] Tests added/updated
 - [ ] All tests pass
 - [ ] Documentation updated
+- [ ] Algorithm changes reflected in Settings → Algorithm (see "Changing How Words Are Decided")
 - [ ] No new warnings
 - [ ] Performance impact considered
 
