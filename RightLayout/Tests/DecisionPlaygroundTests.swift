@@ -61,7 +61,11 @@ final class DecisionPlaygroundTests: XCTestCase {
             let bundle = try XCTUnwrap(Bundle(path: path))
             for note in ProbeNote.allCases {
                 let translated = NSLocalizedString(note.rawValue, bundle: bundle, comment: "")
-                XCTAssertNotEqual(translated, note.rawValue, "No \(code) translation for \"\(note.rawValue)\"")
+                // Notes with no words of their own ("\"%@\" (%@)") may stay as they are.
+                let hasWords = note.rawValue.replacingOccurrences(of: "%@", with: "").contains(where: \.isLetter)
+                if hasWords {
+                    XCTAssertNotEqual(translated, note.rawValue, "No \(code) translation for \"\(note.rawValue)\"")
+                }
                 XCTAssertEqual(
                     translated.components(separatedBy: "%@").count,
                     note.rawValue.components(separatedBy: "%@").count,
