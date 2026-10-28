@@ -202,6 +202,11 @@ public final class EventMonitor {
     package var typedTokenForTesting: String { inputSession.typedToken }
     /// The words before it (for tests).
     package var phraseContextForTesting: String { inputSession.phraseContext }
+    /// The app being typed in, as if it had just been activated (for tests).
+    package var activeAppForTesting: String {
+        get { lastActiveApp }
+        set { lastActiveApp = newValue }
+    }
 
     package convenience init(engine: CorrectionEngine) {
         self.init(
