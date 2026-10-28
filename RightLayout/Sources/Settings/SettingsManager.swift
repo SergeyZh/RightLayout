@@ -167,6 +167,8 @@ public final class SettingsManager: ObservableObject {
         isLearningEnabled = true
         holdEnterForCorrection = true
         transliterationHintsEnabled = false
+        autoSwitchLayout = true
+        correctionSoundEnabled = true
         let (fast, standard) = behaviorPreset.thresholds
         fastPathThreshold = fast
         standardPathThreshold = standard

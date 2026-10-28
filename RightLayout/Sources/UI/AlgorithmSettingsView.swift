@@ -80,6 +80,8 @@ struct AlgorithmSettingsView: View {
             && settings.isLearningEnabled
             && settings.holdEnterForCorrection
             && !settings.transliterationHintsEnabled
+            && settings.autoSwitchLayout
+            && settings.correctionSoundEnabled
             && abs(settings.fastPathThreshold - fast) < 0.001
             && abs(settings.standardPathThreshold - standard) < 0.001
     }
@@ -163,6 +165,8 @@ struct AlgorithmSettingsView: View {
         case .verifier: return settings.isVerifierEnabled
         case .learning: return settings.isLearningEnabled
         case .transliterationHints: return settings.transliterationHintsEnabled
+        case .layoutSwitch: return settings.autoSwitchLayout
+        case .correctionSound: return settings.correctionSoundEnabled
         }
     }
 
@@ -173,6 +177,8 @@ struct AlgorithmSettingsView: View {
         case .verifier: settings.isVerifierEnabled = value
         case .learning: settings.isLearningEnabled = value
         case .transliterationHints: settings.transliterationHintsEnabled = value
+        case .layoutSwitch: settings.autoSwitchLayout = value
+        case .correctionSound: settings.correctionSoundEnabled = value
         }
     }
 }
@@ -695,6 +701,13 @@ private struct OutcomesRow: View {
                     .foregroundStyle(Theme.Color.textPrimary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
+                if let how = TraceStyle.replacement(of: word) {
+                    Text(TraceStyle.text(how))
+                        .font(Theme.Typography.meta())
+                        .foregroundStyle(TraceStyle.color(how.effect))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
     }
@@ -759,16 +772,35 @@ private struct AlgorithmLegend: View {
 
 private struct PlaygroundPanel: View {
     @ObservedObject var model: DecisionPlaygroundModel
+    @FocusState private var isFieldFocused: Bool
+
+    private func title(for app: PlaygroundApp) -> String {
+        switch app {
+        case .readsText: return "TextEdit, Notes, Mail: text read and written"
+        case .slack: return "Slack: text read, retyped"
+        case .hidesText: return "Claude, VS Code, terminal: text hidden"
+        case .unknownHidden: return "Another app that hides its text"
+        }
+    }
 
     var body: some View {
         WorkbenchSection(
             title: "Try a word",
-            detail: "Type a word or a phrase. Each word is checked the way it would be while you type, with the settings below; the diagram shows what every block did with the selected word. Nothing is corrected or learned."
+            detail: "Type a word or a phrase. Each word is checked the way it would be while you type in the chosen app, with the settings below; the diagram shows what every block did with the selected word, down to how it would be replaced. RightLayout doesn't correct this field, and nothing is learned."
         ) {
             HStack(spacing: Theme.Spacing.sm) {
                 TextField(UIStrings.text("For example: ghbdtn rfr ltkf"), text: $model.text)
                     .textFieldStyle(.roundedBorder)
                     .font(Theme.Typography.mono())
+                    .focused($isFieldFocused)
+                    // RightLayout doesn't correct what is typed here, or it would change
+                    // the word being checked.
+                    .onChange(of: isFieldFocused) { focused in
+                        DecisionPlaygroundFocus.isFocused = focused
+                    }
+                    .onDisappear {
+                        DecisionPlaygroundFocus.isFocused = false
+                    }
                 if model.isChecking {
                     ProgressView()
                         .controlSize(.small)
@@ -786,14 +818,15 @@ private struct PlaygroundPanel: View {
             }
 
             HStack(spacing: Theme.Spacing.lg) {
-                Picker("", selection: $model.environment) {
-                    Text(UIStrings.text("App shows its text")).tag(EditingEnvironment.accessibility)
-                    Text(UIStrings.text("App hides its text")).tag(EditingEnvironment.nonAccessibility)
+                Picker("", selection: $model.app) {
+                    ForEach(PlaygroundApp.allCases) { app in
+                        Text(UIStrings.text(title(for: app))).tag(app)
+                    }
                 }
                 .labelsHidden()
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 .frame(width: 340)
-                .help(UIStrings.text("Apps such as Claude, Slack or VS Code don't let RightLayout read their text, which makes corrections more careful."))
+                .help(UIStrings.text("Where the word is typed: it decides how careful the check is and how the correction is put into the text."))
 
                 Toggle(UIStrings.text("Ends with Enter"), isOn: $model.endsWithEnter)
                     .toggleStyle(.checkbox)
@@ -930,6 +963,12 @@ enum TraceStyle {
         case .hotkeyOnly: return "Hotkey only"
         case .leave: return "Leave as typed"
         }
+    }
+
+    /// How the word is put into the text, or why it isn't.
+    static func replacement(of word: PlaygroundWord) -> DecisionProbeEvent? {
+        let steps: [DecisionStep] = [.accessibilityWrite, .verifiedRetype, .blindRetype]
+        return word.events.last { steps.contains($0.step) && $0.effect != .checked && !($0.step == .accessibilityWrite && $0.effect == .rejected) }
     }
 
     static func resultText(_ word: PlaygroundWord) -> String {
