@@ -650,7 +650,11 @@ public final class LayoutMapper: @unchecked Sendable {
         let filtersRearranged = DecisionPipeline.isEnabled(.rearrangedLayoutFilter)
 
         func isUsable(_ layoutId: String) -> Bool {
-            !filtersRearranged || !Self.rearrangedLetterLayoutIds.contains(layoutId) || installed.contains(layoutId)
+            let usable = !filtersRearranged || !Self.rearrangedLetterLayoutIds.contains(layoutId) || installed.contains(layoutId)
+            if !usable {
+                DecisionProbe.record(.rearrangedLayoutFilter, .contributed, .layoutSkipped, [layoutId])
+            }
+            return usable
         }
 
         var sourceLayouts: [String] = [fromID]
@@ -702,6 +706,7 @@ public final class LayoutMapper: @unchecked Sendable {
                Self.rearrangedLetterLayoutIds.contains(srcLayout),
                srcLayout != fromID,
                !installedLayoutIds.contains(srcLayout) {
+                DecisionProbe.record(.rearrangedLayoutFilter, .contributed, .layoutSkipped, [srcLayout])
                 continue
             }
             if let converted = convertBest(text, fromLayout: srcLayout, toLayout: toID),

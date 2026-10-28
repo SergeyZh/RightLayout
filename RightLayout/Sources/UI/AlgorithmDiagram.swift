@@ -50,6 +50,11 @@ struct AlgorithmNode: Identifiable {
     var controls: [Control] = []
     /// The part can settle the decision by itself, and the rest of the check is skipped.
     var decidesAlone = false
+
+    /// How the word check names this part when it reports what it did.
+    var step: DecisionStep? {
+        DecisionStep(rawValue: id)
+    }
 }
 
 enum AlgorithmDiagram {
