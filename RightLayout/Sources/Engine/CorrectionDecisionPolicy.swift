@@ -72,15 +72,18 @@ private struct PolicyThresholds {
         _ preset: SettingsManager.BehaviorPreset,
         blindConfidence: Double = AutoCorrectionLimits.default.blindConfidence
     ) -> PolicyThresholds {
+        // The balanced values, which the Algorithm page can change; the other presets
+        // shift them.
+        let pipeline = DecisionPipeline.current
         let base = PolicyThresholds(
-            axAuto: 0.78,
-            axMargin: 0.12,
-            axShortAuto: 0.90,
-            axShortMargin: 0.16,
-            axHint: 0.70,
+            axAuto: pipeline.value(.policyAutoConfidence),
+            axMargin: pipeline.value(.policyAutoMargin),
+            axShortAuto: pipeline.value(.policyShortAutoConfidence),
+            axShortMargin: pipeline.value(.policyShortAutoMargin),
+            axHint: pipeline.value(.policyHintConfidence),
             nonAXAuto: blindConfidence,
             nonAXMargin: 0.16,
-            nonAXHint: 0.74,
+            nonAXHint: pipeline.value(.policyBlindHintConfidence),
             whitelistAuto: 0.90,
             whitelistHint: 0.65
         )

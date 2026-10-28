@@ -138,6 +138,8 @@ struct NgramLanguageModel: Sendable {
     
     /// Score a text by summing log-probabilities of its trigrams
     func score(_ text: String) -> Float {
+        // Turned off, every trigram is one the model hasn't seen.
+        guard DecisionPipeline.isEnabled(.trigramModel) else { return smoothingValue }
         let normalized = text.lowercased().filter { $0.isLetter }
         guard normalized.count >= 3 else {
             return smoothingValue * Float(max(1, normalized.count))
@@ -160,6 +162,7 @@ struct NgramLanguageModel: Sendable {
 
     /// Score normalized to [0, 1] using model percentiles.
     func normalizedScore(_ text: String) -> Double {
+        guard DecisionPipeline.isEnabled(.trigramModel) else { return 0.0 }
         let s = score(text)
         // Higher (less negative) is better.
         // Use a sigmoid around the median to make the score comparable across languages

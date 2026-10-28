@@ -57,6 +57,8 @@ private struct SettingsPaneView: View {
             HotkeyPane()
         case .apps:
             AppsPane()
+        case .algorithm:
+            AlgorithmSettingsView()
         case .adaptation:
             PersonalizationSettingsView(settings: SettingsManager.shared)
         case .diagnostics:
