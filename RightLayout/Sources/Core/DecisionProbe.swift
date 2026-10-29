@@ -7,6 +7,7 @@ enum DecisionStep: String, CaseIterable, Sendable {
     case frequencyDictionaries
     case systemSpellChecker
     case trigramModel
+    case autoCorrectionOn
     case holdEnter
     case zeroInterference
     case abbreviations
@@ -69,6 +70,10 @@ enum DecisionEffect: Int, Comparable, Sendable {
 /// (localized keys) whose `%@` take the event's arguments.
 enum ProbeNote: String, CaseIterable, Sendable {
     case doesNotApply = "Doesn't apply"
+
+    // End of a word
+    case autoCorrectionOff = "Auto-correction is off: the word stays as typed, and the hotkey still converts it"
+    case autoCorrectionOnHere = "Auto-correction is on, and this app isn't excluded"
 
     // Before routing
     case internationalTerm = "An international term: left as typed"

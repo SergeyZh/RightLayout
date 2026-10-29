@@ -162,6 +162,7 @@ public final class SettingsManager: ObservableObject {
     /// have a setting of their own and the thresholds of the routing paths.
     func resetDecisionAlgorithm() {
         decisionPipeline = .default
+        isEnabled = true
         isVerifierEnabled = true
         isFoundationModelEnabled = true
         isLearningEnabled = true

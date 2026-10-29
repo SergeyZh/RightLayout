@@ -75,6 +75,7 @@ struct AlgorithmSettingsView: View {
     private var isDefault: Bool {
         let (fast, standard) = settings.behaviorPreset.thresholds
         return settings.decisionPipeline.isDefault
+            && settings.isEnabled
             && settings.isVerifierEnabled
             && settings.isFoundationModelEnabled
             && settings.isLearningEnabled
@@ -160,6 +161,7 @@ struct AlgorithmSettingsView: View {
 
     private func value(of setting: AlgorithmNode.SettingSwitch) -> Bool {
         switch setting {
+        case .autoCorrection: return settings.isEnabled
         case .holdEnter: return settings.holdEnterForCorrection
         case .foundationModel: return settings.isFoundationModelEnabled
         case .verifier: return settings.isVerifierEnabled
@@ -172,6 +174,7 @@ struct AlgorithmSettingsView: View {
 
     private func setValue(_ value: Bool, of setting: AlgorithmNode.SettingSwitch) {
         switch setting {
+        case .autoCorrection: settings.isEnabled = value
         case .holdEnter: settings.holdEnterForCorrection = value
         case .foundationModel: settings.isFoundationModelEnabled = value
         case .verifier: settings.isVerifierEnabled = value

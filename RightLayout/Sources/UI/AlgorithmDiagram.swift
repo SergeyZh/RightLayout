@@ -21,6 +21,7 @@ struct AlgorithmNode: Identifiable {
 
     /// Parts that have had a setting of their own since before the Algorithm page.
     enum SettingSwitch {
+        case autoCorrection
         case holdEnter
         case foundationModel
         case verifier
@@ -107,6 +108,15 @@ enum AlgorithmDiagram {
             title: "End of a word",
             detail: "The word is checked when a space or Enter ends it. Punctuation stays part of the word.",
             nodes: [
+                AlgorithmNode(
+                    id: "autoCorrectionOn",
+                    title: "Auto-correction on here",
+                    summary: "Off, or in an excluded app, nothing is corrected",
+                    detail: "With auto-correction turned off, words are left as typed, and the hotkey still converts them. In the apps excluded on the Apps page nothing typed is tracked at all, and the hotkey does nothing there either.",
+                    systemImage: "power",
+                    toggle: .setting(.autoCorrection),
+                    decidesAlone: true
+                ),
                 AlgorithmNode(
                     id: "holdEnter",
                     title: "Hold Enter",
