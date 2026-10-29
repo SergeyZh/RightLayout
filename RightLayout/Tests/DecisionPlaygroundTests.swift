@@ -213,6 +213,19 @@ final class DecisionPlaygroundTests: XCTestCase {
         XCTAssertEqual(typedCorrectly.events.first { $0.step == .capitalizedShortWords }?.note, .doesNotApply)
     }
 
+    func testWithAutoCorrectionOffNothingElseIsChecked() async {
+        var settings = PlaygroundApplySettings()
+        settings.correctsAutomatically = false
+        let word = await check("ghbdtn", settings: settings)[0]
+        XCTAssertEqual(word.outcome, .leave)
+        XCTAssertEqual(word.shown, "ghbdtn")
+        XCTAssertEqual(word.events.map(\.step), [.autoCorrectionOn], "\(word.events)")
+        XCTAssertEqual(word.events.first?.effect, .decided)
+
+        let on = await check("ghbdtn")[0]
+        XCTAssertEqual(on.events.first { $0.step == .autoCorrectionOn }?.note, .autoCorrectionOnHere)
+    }
+
     func testABlockTurnedOffReportsNothing() async {
         await MainActor.run { SettingsManager.shared.setDecisionComponent(.scoredDecision, enabled: false) }
         let word = await check("ghbdtn")[0]

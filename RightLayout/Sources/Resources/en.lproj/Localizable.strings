@@ -837,3 +837,8 @@
 "Enter is held: the corrected word stays on screen; press Enter again to send" = "Enter is held: the corrected word stays on screen; press Enter again to send";
 "The word ends with a space: no Enter to hold" = "The word ends with a space: no Enter to hold";
 "\"%@\" has punctuation: only words of letters alone are decided like lowercase" = "\"%@\" has punctuation: only words of letters alone are decided like lowercase";
+"Auto-correction on here" = "Auto-correction on here";
+"Off, or in an excluded app, nothing is corrected" = "Off, or in an excluded app, nothing is corrected";
+"With auto-correction turned off, words are left as typed, and the hotkey still converts them. In the apps excluded on the Apps page nothing typed is tracked at all, and the hotkey does nothing there either." = "With auto-correction turned off, words are left as typed, and the hotkey still converts them. In the apps excluded on the Apps page nothing typed is tracked at all, and the hotkey does nothing there either.";
+"Auto-correction is off: the word stays as typed, and the hotkey still converts it" = "Auto-correction is off: the word stays as typed, and the hotkey still converts it";
+"Auto-correction is on, and this app isn't excluded" = "Auto-correction is on, and this app isn't excluded";
