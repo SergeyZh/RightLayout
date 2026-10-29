@@ -100,7 +100,7 @@ enum ProbeNote: String, CaseIterable, Sendable {
     case scoredBest = "Best: \"%@\" (%@) scores %@, as typed %@, margin %@"
     case scoredHebrewKeys = "Hebrew keys: \"%@\" (%@) is the likelier word"
     case scoredNothing = "Nothing to convert"
-    case scoredNotEnough = "Best: \"%@\" (%@) scores %@, needs %@"
+    case scoredNotEnough = "Best: \"%@\" (%@) scores %@, needs %@: \"%@\" as typed scores %@ in %@ (a word: %@)"
     case scoredNotAWord = "Best: \"%@\" is not a known word (%@, needs %@)"
     case confidentDecided = "Confident (%@): decided"
     case belowThreshold = "Confidence %@ below %@: checked further"
@@ -129,6 +129,7 @@ enum ProbeNote: String, CaseIterable, Sendable {
     case lowercaseTypedCorrectly = "\"%@\" is typed correctly too"
     case russianPunctuationAtEnd = "\"%@\": Russian punctuation at the end"
     case alreadyCorrection = "Not needed: already a correction (%@)"
+    case capitalizedWithPunctuation = "\"%@\" has punctuation: only words of letters alone are decided like lowercase"
     case languageOff = "%@ involves a language that is off: kept as typed"
     case workingLanguagesOnly = "Only working languages"
 

@@ -379,7 +379,7 @@
 "Tells whether a word exists and how common it is. Common words win with a wide margin, rare forms are still recognized as words. Words shorter than three letters are left out." = "מראה אם מילה קיימת וכמה היא נפוצה. מילים נפוצות מנצחות בפער גדול, וצורות נדירות עדיין מזוהות כמילים. מילים קצרות משלוש אותיות לא נכללות.";
 "macOS spell checker" = "בודק האיות של macOS";
 "The system dictionaries of each language" = "המילונים של המערכת לכל שפה";
-"Checks the spelling of a word with the dictionaries macOS has. A dictionary that accepts obvious gibberish is not used." = "בודק את איות המילה במילונים של macOS. מילון שמקבל ג׳יבריש ברור לא משמש.";
+"Checks the spelling of a word with the dictionaries macOS has. A dictionary that accepts obvious gibberish is not used. It takes any capitalized short word for English (\"Lf\", \"Yj\"), which is why such words get checks of their own." = "בודק את איות המילה במילונים של macOS. מילון שמקבל ג׳יבריש ברור לא משמש. הבודק מקבל כל מילה קצרה באות רישית כאנגלית (\"Lf\", \"Yj\"), ולכן למילים כאלה יש בדיקות משלהן.";
 "Letter trigrams" = "טריגרמות של אותיות";
 "How much a string sounds like a language" = "עד כמה מחרוזת נשמעת כמו שפה";
 "Probabilities of three letters in a row. Judges strings that are in no dictionary, such as names and new words. Turned off, every string sounds equally foreign." = "הסתברויות של שלוש אותיות ברצף. שופטות מחרוזות שאינן באף מילון, כמו שמות ומילים חדשות. כשהן כבויות, כל מחרוזת נשמעת זרה באותה מידה.";
@@ -595,7 +595,7 @@
 "Best: \"%@\" (%@) scores %@, as typed %@, margin %@" = "הטוב ביותר: \"%@\" (%@) ציון %@, כפי שהוקלד %@, פער %@";
 "Hebrew keys: \"%@\" (%@) is the likelier word" = "מקשים עבריים: \"%@\" (%@) היא המילה הסבירה יותר";
 "Nothing to convert" = "אין מה להמיר";
-"Best: \"%@\" (%@) scores %@, needs %@" = "הטוב ביותר: \"%@\" (%@) ציון %@, נדרש %@";
+"Best: \"%@\" (%@) scores %@, needs %@: \"%@\" as typed scores %@ in %@ (a word: %@)" = "הטוב ביותר: \"%@\" (%@) ציון %@, נדרש %@: \"%@\" כפי שהוקלד מקבל %@ ב-%@ (מילה: %@)";
 "Best: \"%@\" is not a known word (%@, needs %@)" = "הטוב ביותר: \"%@\" אינה מילה מוכרת (%@, נדרש %@)";
 "Confident (%@): decided" = "בטוח (%@): הוכרע";
 "Confidence %@ below %@: checked further" = "ביטחון %@ מתחת ל-%@: הבדיקה ממשיכה";
@@ -724,3 +724,4 @@
 "Not needed: already a correction (%@)" = "לא נדרש: זה כבר תיקון (%@)";
 "Enter is held: the corrected word stays on screen; press Enter again to send" = "Enter מעוכב: המילה המתוקנת נשארת על המסך; כדי לשלוח, לחצו Enter שוב";
 "The word ends with a space: no Enter to hold" = "המילה מסתיימת ברווח: אין Enter לעכב";
+"\"%@\" has punctuation: only words of letters alone are decided like lowercase" = "ב-\"%@\" יש פיסוק: רק מילים של אותיות בלבד נקבעות כמו באותיות קטנות";
