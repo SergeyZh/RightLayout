@@ -52,6 +52,8 @@ enum PlaygroundApp: String, CaseIterable, Identifiable, Sendable {
 
 /// The settings that decide how a correction is put into the text.
 struct PlaygroundApplySettings: Sendable {
+    /// "Enable auto-correction".
+    var correctsAutomatically = true
     var holdsEnter = true
     var switchesLayout = true
     var soundName: String?
@@ -81,6 +83,17 @@ enum DecisionPlayground {
         for (index, token) in tokens.enumerated() {
             let isLast = index == tokens.count - 1
             let probe = DecisionProbe()
+
+            // EventMonitor.processCommittedBoundary: with auto-correction off the word is
+            // only tracked, for the hotkey. (The test field's apps are never excluded.)
+            guard settings.correctsAutomatically else {
+                probe.append(step: .autoCorrectionOn, effect: .decided, note: .autoCorrectionOff, arguments: [])
+                words.append(
+                    PlaygroundWord(id: index, typed: token, shown: token, outcome: .leave, proposed: nil, confidence: nil, events: probe.events)
+                )
+                continue
+            }
+            probe.append(step: .autoCorrectionOn, effect: .checked, note: .autoCorrectionOnHere, arguments: [])
             let phrase = words.map(\.shown).joined(separator: " ")
             let planned = await DecisionProbe.$current.withValue(probe) {
                 await engine.planCorrection(token, phraseBuffer: phrase, editingEnvironment: environment)

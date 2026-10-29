@@ -725,3 +725,8 @@
 "Enter is held: the corrected word stays on screen; press Enter again to send" = "Enter מעוכב: המילה המתוקנת נשארת על המסך; כדי לשלוח, לחצו Enter שוב";
 "The word ends with a space: no Enter to hold" = "המילה מסתיימת ברווח: אין Enter לעכב";
 "\"%@\" has punctuation: only words of letters alone are decided like lowercase" = "ב-\"%@\" יש פיסוק: רק מילים של אותיות בלבד נקבעות כמו באותיות קטנות";
+"Auto-correction on here" = "תיקון אוטומטי פעיל כאן";
+"Off, or in an excluded app, nothing is corrected" = "כבוי, או ביישום מוחרג, שום דבר לא מתוקן";
+"With auto-correction turned off, words are left as typed, and the hotkey still converts them. In the apps excluded on the Apps page nothing typed is tracked at all, and the hotkey does nothing there either." = "כשהתיקון האוטומטי כבוי, המילים נשארות כפי שהוקלדו, ומקש הקיצור עדיין ממיר אותן. ביישומים שהוחרגו בעמוד היישומים ההקלדה כלל לא נעקבת, וגם מקש הקיצור לא עושה שם דבר.";
+"Auto-correction is off: the word stays as typed, and the hotkey still converts it" = "התיקון האוטומטי כבוי: המילה נשארת כפי שהוקלדה, ומקש הקיצור עדיין ממיר אותה";
+"Auto-correction is on, and this app isn't excluded" = "התיקון האוטומטי פעיל, והיישום לא מוחרג";

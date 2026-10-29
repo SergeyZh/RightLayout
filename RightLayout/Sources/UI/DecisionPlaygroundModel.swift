@@ -84,6 +84,7 @@ final class DecisionPlaygroundModel: ObservableObject {
 
     private var applySettings: PlaygroundApplySettings {
         PlaygroundApplySettings(
+            correctsAutomatically: settings.isEnabled,
             holdsEnter: settings.holdEnterForCorrection,
             switchesLayout: settings.autoSwitchLayout,
             soundName: settings.correctionSoundEnabled ? UIStrings.text(settings.correctionSound.displayName) : nil,

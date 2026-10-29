@@ -837,3 +837,8 @@
 "Enter is held: the corrected word stays on screen; press Enter again to send" = "Enter задержан: исправленное слово остаётся на экране; чтобы отправить, нажмите Enter ещё раз";
 "The word ends with a space: no Enter to hold" = "Слово закончено пробелом: задерживать нечего";
 "\"%@\" has punctuation: only words of letters alone are decided like lowercase" = "В «%@» есть знак: как в нижнем регистре решаются только слова из одних букв";
+"Auto-correction on here" = "Автоисправление включено";
+"Off, or in an excluded app, nothing is corrected" = "Выключено или приложение исключено — ничего не исправляется";
+"With auto-correction turned off, words are left as typed, and the hotkey still converts them. In the apps excluded on the Apps page nothing typed is tracked at all, and the hotkey does nothing there either." = "Если автоисправление выключено, слова остаются как набраны, а горячая клавиша по-прежнему их конвертирует. В приложениях, исключённых на странице «Приложения», набор вообще не отслеживается, и горячая клавиша там тоже ничего не делает.";
+"Auto-correction is off: the word stays as typed, and the hotkey still converts it" = "Автоисправление выключено: слово остаётся как набрано, а горячая клавиша по-прежнему его конвертирует";
+"Auto-correction is on, and this app isn't excluded" = "Автоисправление включено, и приложение не исключено";
