@@ -144,7 +144,13 @@ When you change one of them, check and update as needed:
    test field reports the change.
 
 Then type a few words into the test field and see that the diagram tells the story the
-code does. If a change needs none of this, say why in the pull request.
+code does. If a change needs none of this, say why in the pull request's "Algorithm page"
+section, on a line starting with "Not needed:".
+
+The "Algorithm page" check (`.github/workflows/algorithm-page.yml`,
+`scripts/check_algorithm_page.py`) fails a pull request that changes one of these files
+without changing the page or giving that reason; the script's `ALGORITHM` list is the
+authoritative list of files.
 
 ## Testing
 
