@@ -1,10 +1,22 @@
 name: Release
 
+# The version is the build time, known only once the job runs, so the run is named after
+# what is known when it starts; the version and the release's link go to its summary.
+run-name: >-
+  Release from ${{ github.ref_name }} by ${{ github.actor }}${{ inputs.note != '' && format(': {0}', inputs.note) || '' }}
+
 on:
   workflow_dispatch:
+    inputs:
+      note:
+        description: "What this release brings, for the run's name (optional)"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build:
+    name: Build, sign and publish
     runs-on: macos-26
     # Signing secrets live in the "release" environment, which only main can deploy to,
     # so workflows from other branches and PRs can't read them.
@@ -26,6 +38,7 @@ jobs:
           VERSION=$(./scripts/build_version.sh)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Building version: $VERSION"
+          echo "### Building v$VERSION from \`$GITHUB_REF_NAME\` (${GITHUB_SHA:0:7})" >> "$GITHUB_STEP_SUMMARY"
       
       # From the "Release notes" sections of the pull requests merged since the last
       # release (scripts/release_notes.py). Before tagging, so the last tag is that release's.
@@ -107,6 +120,7 @@ jobs:
             --notes-file "$NOTES_PATH"
           
           echo "✅ Published to https://github.com/$RELEASES_REPO/releases/tag/$TAG"
+          echo "Published: [$TAG](https://github.com/$RELEASES_REPO/releases/tag/$TAG)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Clean up signing material
         if: always()
