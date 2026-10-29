@@ -86,6 +86,12 @@ actor ConfidenceRouter {
         // ("Yj" → "Но").
         if mode == .automatic,
            DecisionPipeline.isEnabled(.capitalizedShortWords),
+           decision.layoutHypothesis.rawValue.contains("_from_") || Self.lowercasedCapitalizedShortWord(token) == nil {
+            // Only a word the router took as typed correctly needs another look.
+            Self.probeLastCheckNotNeeded(.capitalizedShortWords, decision: decision)
+        }
+        if mode == .automatic,
+           DecisionPipeline.isEnabled(.capitalizedShortWords),
            !decision.layoutHypothesis.rawValue.contains("_from_"),
            let lowercased = Self.lowercasedCapitalizedShortWord(token) {
             let lowered = await route(token: lowercased, context: context, mode: mode)
@@ -126,10 +132,8 @@ actor ConfidenceRouter {
                enabledLanguages: enabledLanguages
            ) {
             decision = punctuated
-        } else if mode == .automatic,
-                  DecisionPipeline.isEnabled(.wrongLayoutPunctuation),
-                  !decision.layoutHypothesis.rawValue.contains("_from_") {
-            DecisionProbe.record(.wrongLayoutPunctuation, .checked, .doesNotApply)
+        } else if mode == .automatic, DecisionPipeline.isEnabled(.wrongLayoutPunctuation) {
+            Self.probeLastCheckNotNeeded(.wrongLayoutPunctuation, decision: decision)
         }
 
         let convertedText = convertedText(for: token, decision: decision, activeLayouts: activeLayouts)
@@ -166,6 +170,17 @@ actor ConfidenceRouter {
             isCorrection: decision.layoutHypothesis.rawValue.contains("_from_"),
             isWhitelistedShort: isWhitelistedShort
         )
+    }
+
+    /// Tells the test field's probe why a last check left the decision alone: the router
+    /// had already found a correction ("Ghbdtn/" is "Привет." without it), or the check
+    /// doesn't fit the word.
+    private static func probeLastCheckNotNeeded(_ step: DecisionStep, decision: LanguageDecision) {
+        if decision.layoutHypothesis.rawValue.contains("_from_") {
+            DecisionProbe.record(step, .checked, .alreadyCorrection, [DecisionProbe.name(decision.layoutHypothesis)])
+        } else {
+            DecisionProbe.record(step, .checked, .doesNotApply)
+        }
     }
 
     /// `token` in lowercase if it is a word of two or three letters with only its first

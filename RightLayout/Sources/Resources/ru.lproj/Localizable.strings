@@ -833,3 +833,6 @@
 "Another app that hides its text" = "Другое приложение, скрывающее текст";
 "Type a word or a phrase. Each word is checked the way it would be while you type in the chosen app, with the settings below; the diagram shows what every block did with the selected word, down to how it would be replaced. RightLayout doesn't correct this field, and nothing is learned." = "Наберите слово или фразу. Каждое слово проверяется так же, как при наборе в выбранном приложении, с настройками ниже; схема показывает, что каждый блок сделал с выбранным словом, вплоть до того, как оно будет заменено. Само это поле RightLayout не исправляет, и обучение ничего не запоминает.";
 "Where the word is typed: it decides how careful the check is and how the correction is put into the text." = "Где набирается слово: от этого зависит, насколько осторожна проверка и как исправление попадает в текст.";
+"Not needed: already a correction (%@)" = "Не нужно: это уже исправление (%@)";
+"Enter is held: the corrected word stays on screen; press Enter again to send" = "Enter задержан: исправленное слово остаётся на экране; чтобы отправить, нажмите Enter ещё раз";
+"The word ends with a space: no Enter to hold" = "Слово закончено пробелом: задерживать нечего";

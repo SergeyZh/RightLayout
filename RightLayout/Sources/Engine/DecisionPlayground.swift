@@ -102,6 +102,9 @@ enum DecisionPlayground {
 
             // A held Enter applies a suggestion right away (EventMonitor.holdEnter).
             let holdsEnter = isLast && endsWithEnter && settings.holdsEnter
+            if settings.holdsEnter, !(isLast && endsWithEnter) {
+                probe.append(step: .holdEnter, effect: .checked, note: .endsWithSpace, arguments: [])
+            }
             if holdsEnter {
                 if case .hint = planned.plan,
                    let forced = await engine.applyPendingSuggestion(),
@@ -162,6 +165,9 @@ enum DecisionPlayground {
                     if holdsEnter {
                         probe.append(step: .holdEnter, effect: .checked, note: .enterSentUnchanged, arguments: [])
                     }
+                } else if holdsEnter {
+                    // EventMonitor.finishHeldEnter: a replaced word keeps its Enter.
+                    probe.append(step: .holdEnter, effect: .contributed, note: .enterHeld, arguments: [])
                 }
             }
             if let previousChange, let previous = words.indices.last {

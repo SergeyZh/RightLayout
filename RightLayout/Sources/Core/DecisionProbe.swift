@@ -128,6 +128,7 @@ enum ProbeNote: String, CaseIterable, Sendable {
     case decidedAsLowercase = "Decided like \"%@\": %@"
     case lowercaseTypedCorrectly = "\"%@\" is typed correctly too"
     case russianPunctuationAtEnd = "\"%@\": Russian punctuation at the end"
+    case alreadyCorrection = "Not needed: already a correction (%@)"
     case languageOff = "%@ involves a language that is off: kept as typed"
     case workingLanguagesOnly = "Only working languages"
 
@@ -161,6 +162,8 @@ enum ProbeNote: String, CaseIterable, Sendable {
     case hint = "Hint: \"%@\""
     case appliedBeforeSending = "Applied before sending: \"%@\""
     case nothingBeforeSending = "Nothing to fix before sending"
+    case enterHeld = "Enter is held: the corrected word stays on screen; press Enter again to send"
+    case endsWithSpace = "The word ends with a space: no Enter to hold"
 
     // Replacing the word
     case appReadsText = "Reads its text through Accessibility"
