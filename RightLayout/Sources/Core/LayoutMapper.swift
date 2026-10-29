@@ -647,8 +647,14 @@ public final class LayoutMapper: @unchecked Sendable {
         let toID = activeLayouts?[to.rawValue] ?? self.activeLayouts[to] ?? "us"
         let installed = installedLayouts ?? installedLayoutIds
 
+        let filtersRearranged = DecisionPipeline.isEnabled(.rearrangedLayoutFilter)
+
         func isUsable(_ layoutId: String) -> Bool {
-            !Self.rearrangedLetterLayoutIds.contains(layoutId) || installed.contains(layoutId)
+            let usable = !filtersRearranged || !Self.rearrangedLetterLayoutIds.contains(layoutId) || installed.contains(layoutId)
+            if !usable {
+                DecisionProbe.record(.rearrangedLayoutFilter, .contributed, .layoutSkipped, [layoutId])
+            }
+            return usable
         }
 
         var sourceLayouts: [String] = [fromID]
@@ -692,12 +698,15 @@ public final class LayoutMapper: @unchecked Sendable {
         let toID = activeLayouts?[to.rawValue] ?? self.activeLayouts[to] ?? "us"
         
         let fromID = activeLayouts?[from.rawValue] ?? self.activeLayouts[from]
+        let filtersRearranged = DecisionPipeline.isEnabled(.rearrangedLayoutFilter)
 
         var results: [(String, String)] = []
         for srcLayout in sourceLayouts {
-            if Self.rearrangedLetterLayoutIds.contains(srcLayout),
+            if filtersRearranged,
+               Self.rearrangedLetterLayoutIds.contains(srcLayout),
                srcLayout != fromID,
                !installedLayoutIds.contains(srcLayout) {
+                DecisionProbe.record(.rearrangedLayoutFilter, .contributed, .layoutSkipped, [srcLayout])
                 continue
             }
             if let converted = convertBest(text, fromLayout: srcLayout, toLayout: toID),

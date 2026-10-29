@@ -77,6 +77,29 @@ package actor CorrectionEngine {
     // Test hook for verifying signals
     var lastReportedSignal: (UUID, UserOutcome)?
 
+    /// Set on the Algorithm page's own engine, which decides words typed into its test
+    /// field: nothing it decides is logged as a correction.
+    var isDryRun = false
+
+    /// Readies the engine for checking a new text in the Algorithm page's test field:
+    /// forgets the words checked before.
+    func startDryRun() {
+        isDryRun = true
+        history = []
+        cyclingState = nil
+        pendingWord = nil
+        sentenceDominantLanguage = nil
+        sentenceWordCount = 0
+        sentenceSequence = []
+        pendingSuggestion = nil
+        lastRevertedState = nil
+    }
+
+    /// The conversion the last word's suggestion would put in, if it got one.
+    func pendingSuggestionReplacement() -> String? {
+        pendingSuggestion?.corrected
+    }
+
     // MARK: - Configuration
 
     /// Single-letter tokens that map to common Russian prepositions (а в к о у и я)
@@ -134,7 +157,7 @@ package actor CorrectionEngine {
         let candidates: [Language: String]? 
         let isAmbiguousValid: Bool // True if this token was valid in source but ambiguous
         
-        var isValid: Bool { Date().timeIntervalSince(timestamp) < ThresholdsConfig.shared.timing.pendingWordTimeout }
+        var isValid: Bool { Date().timeIntervalSince(timestamp) < DecisionPipeline.value(.deferredTimeout) }
     }
 
     /// Outcome of a correction analysis (Ticket 61)

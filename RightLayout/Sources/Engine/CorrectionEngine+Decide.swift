@@ -72,11 +72,17 @@ extension CorrectionEngine {
         }
         
         // Ticket 55: Zero Interference for international terms
-        if languageData.zeroInterference.contains(text.lowercased()) {
+        if DecisionPipeline.isEnabled(.zeroInterference),
+           languageData.zeroInterference.contains(text.lowercased()) {
             logger.info("🛡️ Zero Interference: '\(text)' is strictly preserved")
+            DecisionProbe.record(.zeroInterference, .decided, .internationalTerm)
             return CorrectionResult(corrected: nil, action: .none, pendingCorrection: nil, pendingOriginal: nil, trackingId: nil, transliterationSuggestion: nil)
         }
         
+        if DecisionPipeline.isEnabled(.zeroInterference) {
+            DecisionProbe.record(.zeroInterference, .checked, .doesNotApply)
+        }
+
         logger.info("🔍 === CORRECTION ATTEMPT ===")
         logger.info("Input: \(DecisionLogger.tokenSummary(text), privacy: .public)")
         if let expected = expectedLayout {
@@ -92,12 +98,28 @@ extension CorrectionEngine {
 
         if let letter = await singleRussianLetterWord(text, phraseBuffer: phraseBuffer) {
             DecisionTrail.note("single_letter_ru")
+            DecisionProbe.record(.singleRussianLetter, .decided, .oneLetterRussianWord, [text, letter.corrected ?? ""])
             return letter
+        }
+        if DecisionPipeline.isEnabled(.singleRussianLetter) {
+            DecisionProbe.record(.singleRussianLetter, .checked, .doesNotApply)
         }
 
         // Ticket 42: Safety Gating (Code/URL detection)
         // Check if text looks like code or URL/Command before expensive routing
-        let intent = await intentDetector.detect(text: text)
+        let intent: UserIntent
+        if DecisionPipeline.isEnabled(.intentDetector) {
+            intent = await intentDetector.detect(text: text)
+        } else {
+            intent = .prose
+        }
+        if DecisionPipeline.isEnabled(.intentDetector) {
+            switch intent {
+            case .prose: DecisionProbe.record(.intentDetector, .checked, .ordinaryText)
+            case .code: DecisionProbe.record(.intentDetector, .decided, .looksLikeCode)
+            case .urlOrCommand: DecisionProbe.record(.intentDetector, .decided, .looksLikeLink)
+            }
+        }
         if intent != .prose {
              DecisionTrail.note("intent=\(intent)")
              logger.info("🛡️ Intent detected: \(String(describing: intent)) - skipping correction for safety")
@@ -148,14 +170,18 @@ extension CorrectionEngine {
         let punctuatedWord = evidence.tokenKind == .punctuated && evidence.isCorrection
             ? CorrectionDecisionPolicy.letterCore(of: evidence.convertedText)
             : nil
-        let isWordTypedWithPunctuationKeys = punctuatedWord.map {
+        let isWordTypedWithPunctuationKeys = DecisionPipeline.isEnabled(.punctuationKeyWords) && (punctuatedWord.map {
             WordFrequencyModel.shared(evidence.targetLanguage.rawValue)?.contains(String($0)) ?? false
-        } ?? false
+        } ?? false)
         let usesFastLane = evidence.tokenKind == .plain
             || evidence.isWhitelistedShort
             || isShortWithEdgePunctuation
             || isWordTypedWithPunctuationKeys
         DecisionTrail.note("policy=\(baseDisposition)")
+        Self.probePolicy(evidence: evidence, disposition: baseDisposition)
+        if isWordTypedWithPunctuationKeys, let punctuatedWord {
+            DecisionProbe.record(.punctuationKeyWords, .contributed, .convertedWhole, [String(punctuatedWord)])
+        }
         var riskPolicy = riskPolicy(for: baseDisposition)
         if await settings.isLearningEnabled {
             let learned = await personalizationEngine.demote(
@@ -165,12 +191,16 @@ extension CorrectionEngine {
             )
             if learned != riskPolicy {
                 DecisionTrail.note("learning=\(learned.rawValue)")
+                DecisionProbe.record(.learning, .contributed, learned == .suggestHint ? .learnedSuggestion : .learnedHotkey)
+            } else {
+                DecisionProbe.record(.learning, .checked, .nothingLearned)
             }
             riskPolicy = learned
         }
 
         if text.filter(\.isLetter).count < max(1, limits.minimumWordLength) {
             DecisionTrail.note("below_min_length")
+            DecisionProbe.record(.policy, .contributed, .shorterThanMinimum, [String(max(1, limits.minimumWordLength))])
             riskPolicy = moreConservativeRiskPolicy(riskPolicy, .holdForHotkey)
         }
 
@@ -181,9 +211,11 @@ extension CorrectionEngine {
            evidence.tokenKind == .punctuated,
            !isWordTypedWithPunctuationKeys {
             DecisionTrail.note("blind_punctuated_not_a_word")
+            DecisionProbe.record(.policy, .contributed, .blindPunctuated)
             riskPolicy = moreConservativeRiskPolicy(riskPolicy, .suggestHint)
         }
         DecisionTrail.note("risk=\(riskPolicy.rawValue)")
+        DecisionProbe.recordRiskPolicy(riskPolicy)
         if usesFastLane {
             DecisionTrail.note("fast_lane")
         }
@@ -243,7 +275,7 @@ extension CorrectionEngine {
         // Smart handling for tokens with internal punctuation/symbols:
         // - If punctuation is actually a mapped RU/HE letter (e.g. "k.,k.", "cj;fktyb."), whole-token conversion should win.
         // - If punctuation is a separator between multiple words (e.g. "ghbdtn.rfr"), split + per-word conversion should win.
-        if text.contains(where: { !$0.isLetter && !$0.isNumber }) {
+        if DecisionPipeline.isEnabled(.smartSplit), text.contains(where: { !$0.isLetter && !$0.isNumber }) {
             let activeLayouts = await settings.activeLayouts
             if let smart = await bestSmartCorrection(
                 for: text,
@@ -272,10 +304,13 @@ extension CorrectionEngine {
                     )
                     if !verdict.shouldApply {
                         logger.info("🔍 Verifier REJECTED smart correction: \(verdict.reason)")
+                        DecisionProbe.record(.verifier, .rejected, .verifierRejected, [verdict.reason])
                         // Fall through to standard path
                     } else {
                         // Ticket 59: Only apply if significantly better, OR if it's a "technical" fix
                         // ...
+                        DecisionProbe.record(.verifier, .checked, .verifierApproved, [DecisionProbe.percent(verdict.adjustedConfidence)])
+                        DecisionProbe.record(.smartSplit, .decided, .smartResult, [smart.text, smart.hypothesis.map { DecisionProbe.name($0) } ?? ""])
                         if let from = smart.from, let to = smart.to {
                             let (applied, transaction) = await applyCorrection(original: text, corrected: smart.text, from: from, to: to, hypothesis: hyp, bundleId: bundleId, features: features, riskPolicy: riskPolicy)
                             if sentenceDominantLanguage == nil {
@@ -292,6 +327,7 @@ extension CorrectionEngine {
                     // Verifier disabled or no cross-layout hypothesis — apply directly
                     // Ticket 59: Only apply if significantly better, OR if it's a "technical" fix
                     // ...
+                    DecisionProbe.record(.smartSplit, .decided, .smartResult, [smart.text, smart.hypothesis.map { DecisionProbe.name($0) } ?? ""])
                     if let hyp = smart.hypothesis, let from = smart.from, let to = smart.to {
                         let (applied, transaction) = await applyCorrection(original: text, corrected: smart.text, from: from, to: to, hypothesis: hyp, bundleId: bundleId, features: features, riskPolicy: riskPolicy)
                         if sentenceDominantLanguage == nil {
@@ -307,6 +343,10 @@ extension CorrectionEngine {
             }
         }
         
+        if DecisionPipeline.isEnabled(.smartSplit), text.contains(where: { !$0.isLetter && !$0.isNumber }) {
+            DecisionProbe.record(.smartSplit, .checked, .noBetterSplit)
+        }
+
         // Update sentence dominant language when we have high confidence
         if adjustedConfidence > threshold {
             let targetLang = decision.layoutHypothesis.targetLanguage
@@ -322,15 +362,18 @@ extension CorrectionEngine {
         // Check whitelist for Hebrew short words (Ticket 55) - vital for "Yes"/"No" (כן/לא)
         var hebrewShortWordCandidate: String? = nil
         let heWords = languageData.hebrewCommonShortWords
+        let checksHebrewShortWords = DecisionPipeline.isEnabled(.hebrewShortWords)
         
         // Robust check: does ANY English->Hebrew mapping yield a common short word?
-        let enVariants = LayoutMapper.shared.convertAllVariants(text, from: .english, to: .hebrew)
-        if let match = enVariants.first(where: { heWords.contains($0.result) }) {
-            hebrewShortWordCandidate = match.result
+        if checksHebrewShortWords {
+            let enVariants = LayoutMapper.shared.convertAllVariants(text, from: .english, to: .hebrew)
+            if let match = enVariants.first(where: { heWords.contains($0.result) }) {
+                hebrewShortWordCandidate = match.result
+            }
         }
         
         // Check Russian->Hebrew
-        if hebrewShortWordCandidate == nil {
+        if checksHebrewShortWords, hebrewShortWordCandidate == nil {
             let ruVariants = LayoutMapper.shared.convertAllVariants(text, from: .russian, to: .hebrew)
             if let match = ruVariants.first(where: { heWords.contains($0.result) }) {
                 hebrewShortWordCandidate = match.result
@@ -338,6 +381,9 @@ extension CorrectionEngine {
         }
         
         let isHeShortWord = (hebrewShortWordCandidate != nil)
+        if let hebrewShortWordCandidate {
+            DecisionProbe.record(.hebrewShortWords, .contributed, .commonHebrewWord, [hebrewShortWordCandidate])
+        }
 
         // Only apply correction if adjusted confidence is high enough
         // Exception: Common Hebrew short words (like "lo"/"kt") pass with slightly lower confidence
@@ -346,7 +392,7 @@ extension CorrectionEngine {
         if isHeShortWord {
             effectiveThreshold = min(threshold, 0.3)
         } else if isShortCorrectionCandidate {
-            effectiveThreshold = min(threshold, 0.58)
+            effectiveThreshold = min(threshold, DecisionPipeline.value(.shortWordThreshold))
         } else {
             effectiveThreshold = threshold
         }
@@ -357,13 +403,15 @@ extension CorrectionEngine {
             logger.info("⏭️ Skipping correction (confidence too low after adjustment)")
             
             // Store as pending if confidence is in "uncertain" range (e.g., 0.4-0.7)
-            let minPendingConfidence = ThresholdsConfig.shared.timing.pendingWordMinConfidence
+            let minPendingConfidence = DecisionPipeline.value(.deferredMinConfidence)
             
             // For single-letter tokens that could be Russian prepositions OR common short Hebrew words, lower the threshold
             let isPrepositionCandidate = (text.count == 1 && russianPrepositionMappings[text.lowercased()] != nil) || isHeShortWord
             let effectiveMinConfidence = isPrepositionCandidate ? ThresholdsConfig.shared.timing.prepositionMinConfidence : minPendingConfidence
             
-            if adjustedConfidence >= effectiveMinConfidence || isPrepositionCandidate {
+            if DecisionPipeline.isEnabled(.deferredWords),
+               adjustedConfidence >= effectiveMinConfidence || isPrepositionCandidate {
+                DecisionProbe.record(.deferredWords, .contributed, .remembered, [DecisionProbe.percent(adjustedConfidence)])
                 let isFirst = sentenceWordCount == 0 && pendingWord == nil
                 pendingWord = PendingWord(
                     text: text,
@@ -419,13 +467,15 @@ extension CorrectionEngine {
         if !needsCorrection {
             // Context override for short ambiguous tokens inside a strong sentence.
             // Example: "vs" should become "мы" inside a Russian sentence.
-            if let dominant = sentenceDominantLanguage,
+            if DecisionPipeline.isEnabled(.sentenceContextOverride),
+               let dominant = sentenceDominantLanguage,
                dominant != decision.language,
                sentenceWordCount >= 2,
                text.count <= 2,
                text.allSatisfy({ $0.isLetter }) {
                 let activeLayouts = await settings.activeLayouts
                 if let override = shortTokenDominantOverride(token: text, from: decision.language, to: dominant, activeLayouts: activeLayouts) {
+                    DecisionProbe.record(.sentenceContextOverride, .decided, .sentenceLanguage, [DecisionProbe.name(dominant), override.corrected])
                     let (applied, transaction) = await applyCorrection(
                         original: text,
                         corrected: override.corrected,
@@ -442,7 +492,8 @@ extension CorrectionEngine {
 
             // Ticket 49: If token is valid in current layout BUT is short (<= 2) and prose,
             // check if it has strong candidates in other languages. If so, store as Ambiguous Pending.
-            if text.count <= 2
+            if DecisionPipeline.isEnabled(.deferredWords)
+               && text.count <= 2
                && intent == .prose
                && pendingWord == nil
                && !router.isTechnicalToken(text) {
@@ -467,6 +518,7 @@ extension CorrectionEngine {
                 }
 
                 if !strongCandidates.isEmpty {
+                    DecisionProbe.record(.deferredWords, .contributed, .remembered, [DecisionProbe.percent(1.0)])
                     logger.info("⏳ Storing ambiguous pending token '\(text)' with candidates: \(strongCandidates)")
                     pendingWord = PendingWord(
                         text: text,
@@ -512,7 +564,8 @@ extension CorrectionEngine {
 
             // Ticket 45 Fix: Ensure preposition candidates are stored as pending
             // even if they are valid in current layout (e.g. "e" is valid English, but might be "у" in context)
-            if pendingWord == nil && text.count == 1 && russianPrepositionMappings[text.lowercased()] != nil {
+            if DecisionPipeline.isEnabled(.deferredWords),
+               pendingWord == nil && text.count == 1 && russianPrepositionMappings[text.lowercased()] != nil {
                 // Store with high confidence since it was deemed valid
                 pendingWord = PendingWord(
                     text: text,
@@ -599,11 +652,13 @@ extension CorrectionEngine {
                 )
                 if !verdict.shouldApply {
                     DecisionTrail.note("verifier_rejected")
+                    DecisionProbe.record(.verifier, .rejected, .verifierRejected, [verdict.reason])
                     logger.info("🔍 Verifier REJECTED main conversion: \(verdict.reason)")
                     return CorrectionResult(corrected: nil, action: .none, pendingCorrection: pendingCorrectionResult, pendingOriginal: pendingOriginalText, trackingId: nil, transliterationSuggestion: nil)
                 }
                 // Use verifier's adjusted confidence for downstream RiskController
                 adjustedConfidence = verdict.adjustedConfidence
+                DecisionProbe.record(.verifier, .checked, .verifierApproved, [DecisionProbe.percent(adjustedConfidence)])
             }
             
             let finalRiskPolicy = riskPolicy
@@ -690,14 +745,16 @@ extension CorrectionEngine {
             )
 
             // Log for learning
-            let appBundleId = await MainActor.run { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
-            CorrectionLogger.shared.log(
-                original: text,
-                final: finalAction == .applied ? corrected : "",
-                autoAttempted: decision.layoutHypothesis,
-                userSelected: nil,  // Auto, not user-selected
-                app: appBundleId
-            )
+            if !isDryRun {
+                let appBundleId = await MainActor.run { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
+                CorrectionLogger.shared.log(
+                    original: text,
+                    final: finalAction == .applied ? corrected : "",
+                    autoAttempted: decision.layoutHypothesis,
+                    userSelected: nil,  // Auto, not user-selected
+                    app: appBundleId
+                )
+            }
 
             return CorrectionResult(
                 corrected: finalCorrectedText,
@@ -777,6 +834,7 @@ extension CorrectionEngine {
         // Ticket 55: Use RiskController to ensure we only show hints when policy allows at least hint-level behavior.
         let policy = await RiskController.shared.evaluate(candidateConfidence: suggestion.confidence, contextKey: features.contextKey)
         guard policy == .suggestHint || policy == .autoApply else { return nil }
+        DecisionProbe.record(.transliterationHints, .contributed, .hint, [suggestion.replacement])
         return suggestion
     }
 
@@ -942,6 +1000,11 @@ extension CorrectionEngine {
             return (nil, nil)
         }
 
+        guard DecisionPipeline.isEnabled(.deferredWords) else {
+            pendingWord = nil
+            return (nil, nil)
+        }
+
         guard editingEnvironment == .accessibility,
               riskPolicy == .autoApply,
               pending.text.filter(\.isLetter).count > 1 else {
@@ -974,6 +1037,7 @@ extension CorrectionEngine {
             pendingCorrectionResult = candidateCorrection
                 pendingOriginalText = pending.text
                 cascadeApplied = true
+            DecisionProbe.record(.deferredWords, .decided, .previousWordChanged, [pending.text, candidateCorrection])
         }
 
         if !cascadeApplied {
@@ -992,6 +1056,7 @@ extension CorrectionEngine {
                     pendingCorrectionResult = corrected
                     pendingOriginalText = pending.text
                     logger.info("✅ Pending word corrected via context boost: '\(pending.text)' → '\(corrected)'")
+                    DecisionProbe.record(.deferredWords, .decided, .previousWordChanged, [pending.text, corrected])
                 }
             }
         }
@@ -1068,9 +1133,15 @@ extension CorrectionEngine {
         let enabled = await settings.enabledLanguages
         let activeLayouts = await settings.activeLayouts
         guard let match = WrongLayoutShorthand.match(text, enabledLanguages: enabled, activeLayouts: activeLayouts) else {
+            for step in [DecisionStep.abbreviations, .emoticons] {
+                if DecisionComponent(rawValue: step.rawValue).map(DecisionPipeline.isEnabled) == true {
+                    DecisionProbe.record(step, .checked, .noMatch)
+                }
+            }
             return nil
         }
         logger.info("✍️ Shorthand: '\(text)' → '\(match.text)'")
+        DecisionProbe.record(WrongLayoutShorthand.isEmoticon(match.text) ? .emoticons : .abbreviations, .decided, .exactMatch, [match.text])
 
         let bundleId = await MainActor.run { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
         let hypothesis = hypothesisFor(source: match.from, target: match.to)
@@ -1129,7 +1200,8 @@ extension CorrectionEngine {
     /// Only with the default minimum word length (or a shorter one) and outside the
     /// conservative preset.
     func singleRussianLetterWord(_ text: String, phraseBuffer: String) async -> CorrectionResult? {
-        guard text.count == 1,
+        guard DecisionPipeline.isEnabled(.singleRussianLetter),
+              text.count == 1,
               let letter = text.first,
               letter.isASCII, letter.isLetter,
               Self.singleLetterWords[.english]?.contains(text.lowercased()) == false else {
@@ -1204,6 +1276,31 @@ extension CorrectionEngine {
 
     private static let sentenceEndings: Set<Character> = [".", "!", "?", "…"]
 
+    /// Tells the Algorithm page's probe what kind of word the policy saw and its verdict.
+    private static func probePolicy(evidence: DecisionEvidence, disposition: CorrectionDisposition) {
+        guard DecisionProbe.current != nil else { return }
+        let kind: ProbeNote
+        switch evidence.tokenKind {
+        case .plain: kind = .kindPlain
+        case .short: kind = .kindShort
+        case .punctuated: kind = .kindPunctuated
+        case .mixed: kind = .kindMixed
+        case .technical: kind = .kindTechnical
+        }
+        DecisionProbe.record(.policy, .contributed, kind)
+        let numbers = [DecisionProbe.percent(evidence.confidence), DecisionProbe.number(evidence.winnerMargin)]
+        guard evidence.isCorrection else {
+            DecisionProbe.record(.policy, .contributed, .policyNotCorrection)
+            return
+        }
+        switch disposition {
+        case .autoApply: DecisionProbe.record(.policy, .contributed, .policyReplace, numbers)
+        case .hint: DecisionProbe.record(.policy, .contributed, .policySuggest, numbers)
+        case .manualOnly: DecisionProbe.record(.policy, .contributed, .policyHotkey, numbers)
+        case .reject: DecisionProbe.record(.policy, .contributed, .policyNotCorrection)
+        }
+    }
+
     /// Whether `word` (punctuation aside) is written in Russian letters.
     static func isRussianWord(_ word: String) -> Bool {
         let letters = word.filter(\.isLetter)
@@ -1252,6 +1349,7 @@ extension CorrectionEngine {
     }
 
     func contextualCascadeCorrection(for text: String, targetLanguage: Language) async -> String? {
+        guard DecisionPipeline.isEnabled(.previousWordCascade) else { return nil }
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty, normalized.filter(\.isLetter).count <= 2 else {
             return nil

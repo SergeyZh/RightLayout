@@ -217,7 +217,8 @@ extension CorrectionEngine {
         split: SmartCorrection,
         whole: SmartCorrection
     ) -> Bool {
-        guard split.text != whole.text,
+        guard DecisionPipeline.isEnabled(.punctuationKeyWords),
+              split.text != whole.text,
               whole.text.count == original.count,
               whole.text.allSatisfy(\.isLetter) else {
             return false

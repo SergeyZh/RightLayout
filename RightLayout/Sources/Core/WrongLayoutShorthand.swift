@@ -30,7 +30,7 @@ enum WrongLayoutShorthand {
     ) -> Match? {
         guard token.count >= 2, token.count <= 12, token.contains(where: \.isLetter) else { return nil }
 
-        if enabledLanguages.contains(.english) {
+        if enabledLanguages.contains(.english), DecisionPipeline.isEnabled(.emoticons) {
             for source in [Language.russian, .hebrew] where enabledLanguages.contains(source) {
                 for (_, converted) in LayoutMapper.shared.convertAllVariants(
                     token, from: source, to: .english, activeLayouts: activeLayouts
@@ -41,7 +41,8 @@ enum WrongLayoutShorthand {
         }
 
         // An abbreviation ends with its period: "n/r" without one may be English shorthand.
-        if enabledLanguages.contains(.russian), enabledLanguages.contains(.english), token.contains("/") {
+        if enabledLanguages.contains(.russian), enabledLanguages.contains(.english), token.contains("/"),
+           DecisionPipeline.isEnabled(.abbreviations) {
             for (_, converted) in LayoutMapper.shared.convertAllVariants(
                 token, from: .english, to: .russian, activeLayouts: activeLayouts
             ) where converted.hasSuffix(".") && russianAbbreviations.contains(converted.lowercased()) {

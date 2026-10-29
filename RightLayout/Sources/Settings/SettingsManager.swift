@@ -135,6 +135,45 @@ public final class SettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(isFoundationModelEnabled, forKey: "isFoundationModelEnabled") }
     }
 
+    // MARK: - Decision algorithm
+
+    /// Which parts of the word check are on, and the parameters changed on the Algorithm page.
+    @Published var decisionPipeline: DecisionPipelineSettings {
+        didSet {
+            UserDefaults.standard.set(decisionPipeline.stored, forKey: "decisionPipeline")
+            DecisionPipeline.update(decisionPipeline)
+        }
+    }
+
+    func setDecisionComponent(_ component: DecisionComponent, enabled: Bool) {
+        if enabled {
+            decisionPipeline.disabled.remove(component)
+        } else {
+            decisionPipeline.disabled.insert(component)
+        }
+    }
+
+    /// Sets `parameter` to `value`, or back to its default when `value` is nil.
+    func setDecisionParameter(_ parameter: DecisionParameter, to value: Double?) {
+        decisionPipeline.values[parameter] = value.map(parameter.clamped)
+    }
+
+    /// Puts every part of the word check back to its default, including the parts that
+    /// have a setting of their own and the thresholds of the routing paths.
+    func resetDecisionAlgorithm() {
+        decisionPipeline = .default
+        isVerifierEnabled = true
+        isFoundationModelEnabled = true
+        isLearningEnabled = true
+        holdEnterForCorrection = true
+        transliterationHintsEnabled = false
+        autoSwitchLayout = true
+        correctionSoundEnabled = true
+        let (fast, standard) = behaviorPreset.thresholds
+        fastPathThreshold = fast
+        standardPathThreshold = standard
+    }
+
     // MARK: - Working languages
 
     /// Languages chosen by the user; `nil` follows the keyboard layouts enabled in macOS.
@@ -417,6 +456,7 @@ public final class SettingsManager: ObservableObject {
         self.isVerifierEnabled = UserDefaults.standard.object(forKey: "isVerifierEnabled") as? Bool ?? !isTesting
         self.isFoundationModelEnabled = UserDefaults.standard.object(forKey: "isFoundationModelEnabled") as? Bool ?? true
         self.isDetailedLogEnabled = UserDefaults.standard.object(forKey: "isDetailedLogEnabled") as? Bool ?? false
+        self.decisionPipeline = DecisionPipelineSettings(stored: UserDefaults.standard.dictionary(forKey: "decisionPipeline"))
         self.checkForUpdatesAutomatically = UserDefaults.standard.object(forKey: "checkForUpdatesAutomatically") as? Bool ?? true
 
         self.holdEnterForCorrection = UserDefaults.standard.object(forKey: "holdEnterForCorrection") as? Bool ?? true
@@ -478,6 +518,7 @@ public final class SettingsManager: ObservableObject {
         // Initialize resource bundle now that all properties are set
         self.updateResourceBundle()
         DiagnosticJournal.shared.setEnabled(isDetailedLogEnabled)
+        DecisionPipeline.update(decisionPipeline)
     }
 
     /// Auto-detect keyboard layout variants from macOS

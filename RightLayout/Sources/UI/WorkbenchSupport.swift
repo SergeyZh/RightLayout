@@ -21,6 +21,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case languages
     case hotkey
     case apps
+    case algorithm
     case adaptation
     case diagnostics
     case updates
@@ -35,6 +36,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .languages: "Languages"
         case .hotkey: "Hotkey"
         case .apps: "Apps"
+        case .algorithm: "Algorithm"
         case .adaptation: "Adaptation"
         case .diagnostics: "Diagnostics"
         case .updates: "Updates"
@@ -49,6 +51,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .languages: "globe"
         case .hotkey: "keyboard"
         case .apps: "app.badge"
+        case .algorithm: "flowchart"
         case .adaptation: "brain"
         case .diagnostics: "waveform.path.ecg"
         case .updates: "arrow.down.circle"

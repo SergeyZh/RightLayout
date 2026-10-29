@@ -134,6 +134,13 @@ public final class EventMonitor {
 
     private var inputSession = InputSession()
     private var lastActiveApp: String = ""
+    /// Keys go to the Algorithm page's test field, which checks words itself.
+    private var isIgnoringTestField = false
+
+    private var isTypingInTestField: Bool {
+        DecisionPlaygroundFocus.isFocused
+            && NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+    }
     private var lastCorrectionTrackingId: UUID?
     /// How many characters before the caret reach back to the start of the word last
     /// corrected automatically; Backspace undoes the correction once it erased them all.
@@ -469,6 +476,15 @@ public final class EventMonitor {
         if !skipPIDCheck && event.getIntegerValueField(.eventSourceUserData) == SyntheticEventMarker.value {
             return Unmanaged.passUnretained(event)
         }
+
+        if isTypingInTestField {
+            if !isIgnoringTestField {
+                isIgnoringTestField = true
+                resetSession(reason: "Algorithm test field", clearPhraseContext: true)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+        isIgnoringTestField = false
 
         switch type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel:
