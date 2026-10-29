@@ -350,8 +350,16 @@ private struct NodeCard: View {
                             .foregroundStyle(Theme.Color.textSecondary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
-                        if events != nil {
-                            TraceLine(event: headline, isOn: isOn)
+                        if let events {
+                            // A knowledge source answers for the typed word and for its
+                            // conversion: show both, or one looks like the other's answer.
+                            if let step = node.step, TraceStyle.knowledgeSteps.contains(step), events.count > 1 {
+                                ForEach(events) { event in
+                                    TraceLine(event: event, isOn: isOn)
+                                }
+                            } else {
+                                TraceLine(event: headline, isOn: isOn)
+                            }
                         }
                     }
                     Spacer(minLength: 0)
@@ -907,6 +915,9 @@ private struct TraceLine: View {
 
 /// How the trace of a word is drawn and worded.
 enum TraceStyle {
+    /// The knowledge sources, which report on each word they were asked about.
+    static let knowledgeSteps: Set<DecisionStep> = [.builtinLexicon, .frequencyDictionaries, .systemSpellChecker, .trigramModel]
+
     /// The event a block is summed up by: its strongest effect, the latest of those.
     static func headline(_ events: [DecisionProbeEvent]) -> DecisionProbeEvent? {
         guard let strongest = events.map(\.effect).max() else { return nil }
