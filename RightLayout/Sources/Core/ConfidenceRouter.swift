@@ -88,7 +88,7 @@ actor ConfidenceRouter {
            DecisionPipeline.isEnabled(.capitalizedShortWords),
            decision.layoutHypothesis.rawValue.contains("_from_") || Self.lowercasedCapitalizedShortWord(token) == nil {
             // Only a word the router took as typed correctly needs another look.
-            Self.probeLastCheckNotNeeded(.capitalizedShortWords, decision: decision)
+            Self.probeLastCheckNotNeeded(.capitalizedShortWords, decision: decision, token: token)
         }
         if mode == .automatic,
            DecisionPipeline.isEnabled(.capitalizedShortWords),
@@ -175,9 +175,15 @@ actor ConfidenceRouter {
     /// Tells the test field's probe why a last check left the decision alone: the router
     /// had already found a correction ("Ghbdtn/" is "Привет." without it), or the check
     /// doesn't fit the word.
-    private static func probeLastCheckNotNeeded(_ step: DecisionStep, decision: LanguageDecision) {
+    private static func probeLastCheckNotNeeded(_ step: DecisionStep, decision: LanguageDecision, token: String = "") {
         if decision.layoutHypothesis.rawValue.contains("_from_") {
             DecisionProbe.record(step, .checked, .alreadyCorrection, [DecisionProbe.name(decision.layoutHypothesis)])
+        } else if step == .capitalizedShortWords,
+                  let core = CorrectionDecisionPolicy.letterCore(of: token, typedInWrongLayout: true),
+                  core.count < token.count,
+                  lowercasedCapitalizedShortWord(String(core)) != nil {
+            // "Lf/": the punctuation keeps this check out; the next one may still help.
+            DecisionProbe.record(step, .checked, .capitalizedWithPunctuation, [token])
         } else {
             DecisionProbe.record(step, .checked, .doesNotApply)
         }
@@ -1604,11 +1610,19 @@ actor ConfidenceRouter {
         }
         
         guard best.q >= bestAsIs + requiredMargin else {
+            // Say what makes the word as typed score so high ("Lf" is an English word to
+            // the spell checker), or the refusal can't be understood.
+            let asIsLanguage = [(Language.russian, asIsRu), (.english, asIsEn), (.hebrew, asIsHe)]
+                .max { $0.1 < $1.1 }?.0 ?? .english
             DecisionProbe.record(.scoredDecision, .checked, .scoredNotEnough, [
                 best.converted,
                 DecisionProbe.name(best.hypothesis),
                 DecisionProbe.number(best.q),
-                DecisionProbe.number(bestAsIs + requiredMargin)
+                DecisionProbe.number(bestAsIs + requiredMargin),
+                token,
+                DecisionProbe.number(bestAsIs),
+                DecisionProbe.name(asIsLanguage),
+                DecisionProbe.percent(wordValidator.confidence(for: token, language: asIsLanguage))
             ])
             return nil
         }

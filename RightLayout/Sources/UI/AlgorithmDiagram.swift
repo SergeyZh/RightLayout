@@ -86,7 +86,7 @@ enum AlgorithmDiagram {
                 id: "systemSpellChecker",
                 title: "macOS spell checker",
                 summary: "The system dictionaries of each language",
-                detail: "Checks the spelling of a word with the dictionaries macOS has. A dictionary that accepts obvious gibberish is not used.",
+                detail: "Checks the spelling of a word with the dictionaries macOS has. A dictionary that accepts obvious gibberish is not used. It takes any capitalized short word for English (\"Lf\", \"Yj\"), which is why such words get checks of their own.",
                 systemImage: "text.badge.checkmark",
                 toggle: .component(.systemSpellChecker)
             ),

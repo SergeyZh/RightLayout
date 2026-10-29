@@ -206,6 +206,9 @@ final class DecisionPlaygroundTests: XCTestCase {
         XCTAssertEqual(short.shown, "Да.")
         XCTAssertTrue(short.events.contains { $0.step == .wrongLayoutPunctuation && $0.effect == .decided }, "\(short.events)")
 
+        // The lowercase rule takes letters only, so it says why it leaves "Lf/" to the next check.
+        XCTAssertEqual(short.events.first { $0.step == .capitalizedShortWords }?.note, .capitalizedWithPunctuation, "\(short.events)")
+
         let typedCorrectly = await check("привет")[0]
         XCTAssertEqual(typedCorrectly.events.first { $0.step == .capitalizedShortWords }?.note, .doesNotApply)
     }

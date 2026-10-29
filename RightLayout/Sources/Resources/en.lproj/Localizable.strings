@@ -502,7 +502,7 @@
 "Tells whether a word exists and how common it is. Common words win with a wide margin, rare forms are still recognized as words. Words shorter than three letters are left out." = "Tells whether a word exists and how common it is. Common words win with a wide margin, rare forms are still recognized as words. Words shorter than three letters are left out.";
 "macOS spell checker" = "macOS spell checker";
 "The system dictionaries of each language" = "The system dictionaries of each language";
-"Checks the spelling of a word with the dictionaries macOS has. A dictionary that accepts obvious gibberish is not used." = "Checks the spelling of a word with the dictionaries macOS has. A dictionary that accepts obvious gibberish is not used.";
+"Checks the spelling of a word with the dictionaries macOS has. A dictionary that accepts obvious gibberish is not used. It takes any capitalized short word for English (\"Lf\", \"Yj\"), which is why such words get checks of their own." = "Checks the spelling of a word with the dictionaries macOS has. A dictionary that accepts obvious gibberish is not used. It takes any capitalized short word for English (\"Lf\", \"Yj\"), which is why such words get checks of their own.";
 "Letter trigrams" = "Letter trigrams";
 "How much a string sounds like a language" = "How much a string sounds like a language";
 "Probabilities of three letters in a row. Judges strings that are in no dictionary, such as names and new words. Turned off, every string sounds equally foreign." = "Probabilities of three letters in a row. Judges strings that are in no dictionary, such as names and new words. Turned off, every string sounds equally foreign.";
@@ -708,7 +708,7 @@
 "Best: \"%@\" (%@) scores %@, as typed %@, margin %@" = "Best: \"%@\" (%@) scores %@, as typed %@, margin %@";
 "Hebrew keys: \"%@\" (%@) is the likelier word" = "Hebrew keys: \"%@\" (%@) is the likelier word";
 "Nothing to convert" = "Nothing to convert";
-"Best: \"%@\" (%@) scores %@, needs %@" = "Best: \"%@\" (%@) scores %@, needs %@";
+"Best: \"%@\" (%@) scores %@, needs %@: \"%@\" as typed scores %@ in %@ (a word: %@)" = "Best: \"%@\" (%@) scores %@, needs %@: \"%@\" as typed scores %@ in %@ (a word: %@)";
 "Best: \"%@\" is not a known word (%@, needs %@)" = "Best: \"%@\" is not a known word (%@, needs %@)";
 "Confident (%@): decided" = "Confident (%@): decided";
 "Confidence %@ below %@: checked further" = "Confidence %@ below %@: checked further";
@@ -836,3 +836,4 @@
 "Not needed: already a correction (%@)" = "Not needed: already a correction (%@)";
 "Enter is held: the corrected word stays on screen; press Enter again to send" = "Enter is held: the corrected word stays on screen; press Enter again to send";
 "The word ends with a space: no Enter to hold" = "The word ends with a space: no Enter to hold";
+"\"%@\" has punctuation: only words of letters alone are decided like lowercase" = "\"%@\" has punctuation: only words of letters alone are decided like lowercase";

@@ -502,7 +502,7 @@
 "Tells whether a word exists and how common it is. Common words win with a wide margin, rare forms are still recognized as words. Words shorter than three letters are left out." = "Говорит, существует ли слово и насколько оно частое. Частые слова выигрывают с большим запасом, редкие формы всё равно узнаются как слова. Слова короче трёх букв не используются.";
 "macOS spell checker" = "Проверка орфографии macOS";
 "The system dictionaries of each language" = "Системные словари каждого языка";
-"Checks the spelling of a word with the dictionaries macOS has. A dictionary that accepts obvious gibberish is not used." = "Проверяет написание слова словарями macOS. Словарь, который принимает явную бессмыслицу, не используется.";
+"Checks the spelling of a word with the dictionaries macOS has. A dictionary that accepts obvious gibberish is not used. It takes any capitalized short word for English (\"Lf\", \"Yj\"), which is why such words get checks of their own." = "Проверяет написание слова словарями macOS. Словарь, который принимает явную бессмыслицу, не используется. Любое короткое слово с заглавной буквы проверка считает английским («Lf», «Yj»), поэтому для таких слов есть отдельные проверки.";
 "Letter trigrams" = "Триграммы букв";
 "How much a string sounds like a language" = "Насколько строка «звучит» как язык";
 "Probabilities of three letters in a row. Judges strings that are in no dictionary, such as names and new words. Turned off, every string sounds equally foreign." = "Вероятности трёх букв подряд. Оценивают строки, которых нет ни в одном словаре, например имена и новые слова. Без них любая строка звучит одинаково чуждо.";
@@ -708,7 +708,7 @@
 "Best: \"%@\" (%@) scores %@, as typed %@, margin %@" = "Лучший: «%@» (%@), оценка %@, как набрано %@, запас %@";
 "Hebrew keys: \"%@\" (%@) is the likelier word" = "Клавиши иврита: «%@» (%@) — более вероятное слово";
 "Nothing to convert" = "Нечего конвертировать";
-"Best: \"%@\" (%@) scores %@, needs %@" = "Лучший: «%@» (%@), оценка %@, нужно %@";
+"Best: \"%@\" (%@) scores %@, needs %@: \"%@\" as typed scores %@ in %@ (a word: %@)" = "Лучший: «%@» (%@), оценка %@, нужно %@: «%@» как набрано оценено в %@ на %@ (слово: %@)";
 "Best: \"%@\" is not a known word (%@, needs %@)" = "Лучший: «%@» — не известное слово (%@, нужно %@)";
 "Confident (%@): decided" = "Уверенно (%@): решено";
 "Confidence %@ below %@: checked further" = "Уверенность %@ ниже %@: проверка продолжается";
@@ -836,3 +836,4 @@
 "Not needed: already a correction (%@)" = "Не нужно: это уже исправление (%@)";
 "Enter is held: the corrected word stays on screen; press Enter again to send" = "Enter задержан: исправленное слово остаётся на экране; чтобы отправить, нажмите Enter ещё раз";
 "The word ends with a space: no Enter to hold" = "Слово закончено пробелом: задерживать нечего";
+"\"%@\" has punctuation: only words of letters alone are decided like lowercase" = "В «%@» есть знак: как в нижнем регистре решаются только слова из одних букв";
