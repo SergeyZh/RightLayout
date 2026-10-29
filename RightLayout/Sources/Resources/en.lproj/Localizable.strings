@@ -833,3 +833,6 @@
 "Another app that hides its text" = "Another app that hides its text";
 "Type a word or a phrase. Each word is checked the way it would be while you type in the chosen app, with the settings below; the diagram shows what every block did with the selected word, down to how it would be replaced. RightLayout doesn't correct this field, and nothing is learned." = "Type a word or a phrase. Each word is checked the way it would be while you type in the chosen app, with the settings below; the diagram shows what every block did with the selected word, down to how it would be replaced. RightLayout doesn't correct this field, and nothing is learned.";
 "Where the word is typed: it decides how careful the check is and how the correction is put into the text." = "Where the word is typed: it decides how careful the check is and how the correction is put into the text.";
+"Not needed: already a correction (%@)" = "Not needed: already a correction (%@)";
+"Enter is held: the corrected word stays on screen; press Enter again to send" = "Enter is held: the corrected word stays on screen; press Enter again to send";
+"The word ends with a space: no Enter to hold" = "The word ends with a space: no Enter to hold";

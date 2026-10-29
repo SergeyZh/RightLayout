@@ -721,3 +721,6 @@
 "Another app that hides its text" = "יישום אחר שמסתיר את הטקסט";
 "Type a word or a phrase. Each word is checked the way it would be while you type in the chosen app, with the settings below; the diagram shows what every block did with the selected word, down to how it would be replaced. RightLayout doesn't correct this field, and nothing is learned." = "הקלידו מילה או משפט. כל מילה נבדקת כמו בזמן הקלדה ביישום שנבחר, עם ההגדרות שלמטה; התרשים מראה מה כל בלוק עשה עם המילה שנבחרה, עד לאופן שבו היא תוחלף. את השדה הזה RightLayout לא מתקן, ושום דבר לא נלמד.";
 "Where the word is typed: it decides how careful the check is and how the correction is put into the text." = "היכן המילה מוקלדת: זה קובע כמה זהירה הבדיקה ואיך התיקון מוכנס לטקסט.";
+"Not needed: already a correction (%@)" = "לא נדרש: זה כבר תיקון (%@)";
+"Enter is held: the corrected word stays on screen; press Enter again to send" = "Enter מעוכב: המילה המתוקנת נשארת על המסך; כדי לשלוח, לחצו Enter שוב";
+"The word ends with a space: no Enter to hold" = "המילה מסתיימת ברווח: אין Enter לעכב";

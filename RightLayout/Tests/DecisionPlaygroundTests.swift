@@ -186,6 +186,30 @@ final class DecisionPlaygroundTests: XCTestCase {
         XCTAssertEqual(word.events.first { $0.step == .verifiedRetype }?.arguments, ["6", "привет"])
     }
 
+    func testAHeldEnterShowsWhatItDidWithACorrectedWord() async {
+        let word = await check("ghbdtn", endsWithEnter: true)[0]
+        XCTAssertEqual(word.outcome, .replace)
+        XCTAssertEqual(word.events.first { $0.step == .holdEnter }?.note, .enterHeld, "\(word.events)")
+
+        let spaced = await check("ghbdtn")[0]
+        XCTAssertEqual(spaced.events.first { $0.step == .holdEnter }?.note, .endsWithSpace)
+    }
+
+    func testLastChecksSayWhyTheyLeftACorrectionAlone() async {
+        // "Ghbdtn/" is "Привет." already before the check for Russian punctuation at the
+        // end; "Lf/" only becomes "Да." there.
+        let word = await check("Ghbdtn/")[0]
+        XCTAssertEqual(word.shown, "Привет.")
+        XCTAssertEqual(word.events.first { $0.step == .wrongLayoutPunctuation }?.note, .alreadyCorrection, "\(word.events)")
+
+        let short = await check("Lf/")[0]
+        XCTAssertEqual(short.shown, "Да.")
+        XCTAssertTrue(short.events.contains { $0.step == .wrongLayoutPunctuation && $0.effect == .decided }, "\(short.events)")
+
+        let typedCorrectly = await check("привет")[0]
+        XCTAssertEqual(typedCorrectly.events.first { $0.step == .capitalizedShortWords }?.note, .doesNotApply)
+    }
+
     func testABlockTurnedOffReportsNothing() async {
         await MainActor.run { SettingsManager.shared.setDecisionComponent(.scoredDecision, enabled: false) }
         let word = await check("ghbdtn")[0]
