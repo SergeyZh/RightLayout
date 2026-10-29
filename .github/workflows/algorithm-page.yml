@@ -1,0 +1,33 @@
+name: Algorithm page
+
+# A pull request that changes how words are decided or replaced must update Settings →
+# Algorithm too, or say why it needn't (CONTRIBUTING.md, "Changing How Words Are
+# Decided"). Editing the description re-runs the check.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  algorithm-page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Test the check
+        run: python3 -I scripts/test_check_algorithm_page.py
+
+      - name: Check that the Algorithm page follows the change
+        env:
+          # Passed through the environment, never into the script's text.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --name-only "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed.txt"
+          python3 -I scripts/check_algorithm_page.py --files "$RUNNER_TEMP/changed.txt"

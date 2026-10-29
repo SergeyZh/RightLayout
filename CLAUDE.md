@@ -14,3 +14,7 @@ Are Decided" in `CONTRIBUTING.md`: blocks, switches (`DecisionComponent`), param
 (`DecisionParameter`), the trace (`DecisionProbe`, `DecisionPlayground`), translations in
 `en`/`ru`/`he`, `docs/word-check-algorithm.ru.md` and the tests. If nothing needs to change,
 say so and why when you report the change.
+
+The "Algorithm page" CI check (`scripts/check_algorithm_page.py`) fails a pull request that
+changes an algorithm file without changing the page, unless its "Algorithm page" section
+has a "Not needed: <why>" line.
