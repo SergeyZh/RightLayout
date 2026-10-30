@@ -1,9 +1,15 @@
 name: Release
 
-# The version is the build time, known only once the job runs, so the run is named after
-# what is known when it starts; the version and the release's link go to its summary.
+# A run is named once, when it starts, but a release's version is the build time and its
+# commits run from the previous release's tag to the commit being built, both known only
+# once a job runs. So starting a release (workflow_dispatch) only works them out and hands
+# them to a second run of this workflow (repository_dispatch), which is named after them,
+# e.g. "Release: v20261030.141500 (v20261016.205332..1a2b3c4, 12 commits)", and builds.
 run-name: >-
-  Release from ${{ github.ref_name }} by ${{ github.actor }}${{ inputs.note != '' && format(': {0}', inputs.note) || '' }}
+  ${{ github.event_name == 'repository_dispatch'
+  && format('Release: v{0} ({1}){2}', github.event.client_payload.version, github.event.client_payload.commits,
+  github.event.client_payload.note != '' && format(': {0}', github.event.client_payload.note) || '')
+  || format('Release requested from {0} by {1}', github.ref_name, github.actor) }}
 
 on:
   workflow_dispatch:
@@ -13,10 +19,57 @@ on:
         required: false
         type: string
         default: ""
+  repository_dispatch:
+    types: [release]
 
 jobs:
+  start:
+    name: Work out the version and commits
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      # Sending repository_dispatch needs it.
+      contents: write
+
+    steps:
+      - name: Check the branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Releases are made from main, not $GITHUB_REF_NAME"
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Start the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTE: ${{ inputs.note }}
+        run: |
+          # Build time in UTC, e.g. 20261016.205332 (see scripts/build_version.sh).
+          VERSION=$(./scripts/build_version.sh)
+          PREVIOUS=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          FROM=${PREVIOUS:-$(git rev-list --max-parents=0 --abbrev-commit HEAD | tail -1)}
+          COUNT=$(git rev-list --count ${PREVIOUS:+"$PREVIOUS"..}HEAD)
+          [ "$COUNT" -eq 1 ] && NOUN=commit || NOUN=commits
+          COMMITS="$FROM..${GITHUB_SHA:0:7}, $COUNT $NOUN"
+          echo "📦 v$VERSION ($COMMITS)"
+
+          jq -n --arg version "$VERSION" --arg sha "$GITHUB_SHA" --arg commits "$COMMITS" \
+            --arg note "$NOTE" --arg requested_by "$GITHUB_ACTOR" \
+            '{event_type: "release", client_payload: {version: $version, sha: $sha,
+              commits: $commits, note: $note, requested_by: $requested_by}}' \
+            | gh api "repos/$GITHUB_REPOSITORY/dispatches" --input -
+
+          {
+            echo "### Started v$VERSION ($COMMITS)"
+            echo "It is built by the run named \"Release: v$VERSION …\" in [Release runs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/release.yml)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build:
     name: Build, sign and publish
+    if: github.event_name == 'repository_dispatch'
     runs-on: macos-26
     # Signing secrets live in the "release" environment, which only main can deploy to,
     # so workflows from other branches and PRs can't read them.
@@ -28,17 +81,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.client_payload.sha }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
+      # Worked out by the "start" job of the run that asked for this one. Anyone who can
+      # send a repository_dispatch can send any commit, so only commits on main are built.
       - name: Determine version
         id: version
+        env:
+          VERSION: ${{ github.event.client_payload.version }}
+          SHA: ${{ github.event.client_payload.sha }}
+          COMMITS: ${{ github.event.client_payload.commits }}
+          REQUESTED_BY: ${{ github.event.client_payload.requested_by }}
         run: |
-          # Build time in UTC, e.g. 20261016.205332 (see scripts/build_version.sh).
-          VERSION=$(./scripts/build_version.sh)
+          [[ "$VERSION" =~ ^[0-9]{8}\.[0-9]{6}$ ]] || { echo "::error::Bad version: $VERSION"; exit 1; }
+          git merge-base --is-ancestor "$SHA" origin/main \
+            || { echo "::error::$SHA is not on main"; exit 1; }
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Building version: $VERSION"
-          echo "### Building v$VERSION from \`$GITHUB_REF_NAME\` (${GITHUB_SHA:0:7})" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Building v$VERSION ($COMMITS), asked for by $REQUESTED_BY" >> "$GITHUB_STEP_SUMMARY"
       
       # From the "Release notes" sections of the pull requests merged since the last
       # release (scripts/release_notes.py). Before tagging, so the last tag is that release's.

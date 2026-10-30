@@ -634,6 +634,7 @@ cmd_release_github() {
   gh workflow run release.yml --repo SergeyZh/RightLayout
   
   success "Release workflow triggered!"
+  info "It starts a run named \"Release: v<version> (<previous release>..<commit>, N commits)\" that builds it."
   info "Watch progress: gh run watch --repo SergeyZh/RightLayout"
   echo ""
   info "Or open: https://github.com/SergeyZh/RightLayout/actions"
@@ -662,16 +663,14 @@ cmd_release_status() {
   
   info "📦 Latest release: ${COLOR_GREEN}${latest_release}${COLOR_RESET}"
   
-  # Get the workflow run for that release
-  local run_id=$(gh run list --repo SergeyZh/RightLayout --workflow=release.yml --limit 10 --json databaseId,displayTitle --jq '.[] | select(.displayTitle == "Release") | .databaseId' 2>/dev/null | head -1)
+  # The commit that release was built from: the one its tag points at
+  local release_sha=$(gh api "repos/SergeyZh/RightLayout/commits/${latest_release}" --jq '.sha' 2>/dev/null)
   
-  if [[ -z "$run_id" ]]; then
-    warn "Could not find release workflow run"
+  if [[ -z "$release_sha" ]]; then
+    warn "Could not find the commit of ${latest_release}"
     return 1
   fi
   
-  # Get commit SHA from that run
-  local release_sha=$(gh api repos/SergeyZh/RightLayout/actions/runs/$run_id --jq '.head_sha' 2>/dev/null)
   local release_sha_short=$(echo $release_sha | cut -c1-7)
   
   info "📍 Release built from: ${COLOR_YELLOW}${release_sha_short}${COLOR_RESET}"
