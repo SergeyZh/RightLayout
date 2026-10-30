@@ -172,7 +172,7 @@ enum AlgorithmDiagram {
                     id: "intentDetector",
                     title: "Code and links",
                     summary: "Code, URLs and commands are left as typed",
-                    detail: "Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path.",
+                    detail: "Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path. A capital inside a word marks an identifier only in Latin letters: \"ОуеИкфшты\" goes on and becomes \"JetBrains\".",
                     systemImage: "chevron.left.forwardslash.chevron.right",
                     toggle: .component(.intentDetector),
                     decidesAlone: true

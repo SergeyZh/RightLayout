@@ -527,7 +527,7 @@
 "A Latin letter that is a one-letter Russian word is fixed at once after a Russian word, or as a capital starting a sentence after one. A capital inside a sentence (\"план B\") is left alone." = "Латинская буква, которая является русским словом из одной буквы, исправляется сразу после русского слова или как заглавная в начале предложения после него. Заглавная внутри предложения («план B») не трогается.";
 "Code and links" = "Код и ссылки";
 "Code, URLs and commands are left as typed" = "Код, ссылки и команды остаются как набраны";
-"Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path." = "Распознаёт код, ссылки, пути и команды терминала и оставляет их как есть. Слово с косыми чертами только в конце («Lf/») путём не считается.";
+"Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path. A capital inside a word marks an identifier only in Latin letters: \"ОуеИкфшты\" goes on and becomes \"JetBrains\"." = "Распознаёт код, ссылки, пути и команды терминала и оставляет их как есть. Слово с косыми чертами только в конце («Lf/») путём не считается. Заглавная внутри слова говорит об идентификаторе только в латинице: «ОуеИкфшты» идёт дальше и становится «JetBrains».";
 "Router: firm rules" = "Роутер: жёсткие правила";
 "The first rule that applies decides; the weighing below is skipped." = "Решает первое сработавшее правило; оценка ниже пропускается.";
 "Your rules" = "Ваши правила";

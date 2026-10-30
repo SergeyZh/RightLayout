@@ -164,7 +164,10 @@ actor IntentDetector {
             
             // 1. camelCase: lower...Upper... (no underscore/hyphen)
             // AND PascalCase: Upper...Upper...
-            if !token.contains("_") && !token.contains("-") && token.count > 1 {
+            // Only in Latin letters: identifiers are written in Latin, while a Cyrillic word
+            // with a capital inside is a word typed in the wrong layout ("ОуеИкфшты" is
+            // "JetBrains") or a name ("ВКонтакте"), and the router tells which.
+            if !token.contains("_") && !token.contains("-") && token.count > 1 && isLatinOnly(token) {
                  // Check if it has internal uppercase letter (not first, not last preferably, or just internal)
                  // PascalCase: "MyClass" -> Starts Upper, has another Upper inside.
                  // camelCase: "myVar" -> Starts Lower, has Upper inside.
@@ -229,5 +232,10 @@ actor IntentDetector {
         }
         
         return false
+    }
+
+    /// Whether every letter of `token` is a Latin letter (A–Z, a–z).
+    private func isLatinOnly(_ token: String) -> Bool {
+        token.allSatisfy { !$0.isLetter || $0.isASCII }
     }
 }

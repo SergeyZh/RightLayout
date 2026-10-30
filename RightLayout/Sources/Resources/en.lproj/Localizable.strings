@@ -527,7 +527,7 @@
 "A Latin letter that is a one-letter Russian word is fixed at once after a Russian word, or as a capital starting a sentence after one. A capital inside a sentence (\"план B\") is left alone." = "A Latin letter that is a one-letter Russian word is fixed at once after a Russian word, or as a capital starting a sentence after one. A capital inside a sentence (\"план B\") is left alone.";
 "Code and links" = "Code and links";
 "Code, URLs and commands are left as typed" = "Code, URLs and commands are left as typed";
-"Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path." = "Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path.";
+"Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path. A capital inside a word marks an identifier only in Latin letters: \"ОуеИкфшты\" goes on and becomes \"JetBrains\"." = "Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path. A capital inside a word marks an identifier only in Latin letters: \"ОуеИкфшты\" goes on and becomes \"JetBrains\".";
 "Router: firm rules" = "Router: firm rules";
 "The first rule that applies decides; the weighing below is skipped." = "The first rule that applies decides; the weighing below is skipped.";
 "Your rules" = "Your rules";
