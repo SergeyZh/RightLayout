@@ -316,6 +316,24 @@ final class SelectionReplacementService {
             )
         }
 
+        // The write was reported as failed, but the app may have made it anyway; writing
+        // the whole value over it is then not needed.
+        if snapshot.capabilities.supportsSelectedRangeWrite,
+           snapshot.capabilities.supportsSelectedTextWrite,
+           await readBackReplacement(request.replacement, at: verifiedRange.location, attempts: 1).verified {
+            logger.info("AX selected text write reported an error, but the text was replaced")
+            setSelectedRange(element: snapshot.element, range: caretRange)
+            lastStrategy = .axSelectedTextReplace
+            return TextEditResult(
+                strategy: .axSelectedTextReplace,
+                appliedText: request.replacement,
+                caretRange: caretRange,
+                postVerified: true,
+                needsResync: false,
+                commitKind: .verifiedCommit
+            )
+        }
+
         guard snapshot.capabilities.capabilityClass == .axFull,
               snapshot.capabilities.supportsValueWrite,
               snapshot.capabilities.supportsFullTextRead else {
@@ -358,6 +376,22 @@ final class SelectionReplacementService {
         )
         guard setValueResult == .success else {
             logger.warning("AX value write failed: \(String(describing: setValueResult.rawValue), privacy: .public)")
+            // Some apps report an error for a write they did make. Retyping or giving up
+            // would then leave a done replacement counted as failed.
+            if await readBackReplacement(request.replacement, at: verifiedRange.location).verified {
+                if snapshot.capabilities.supportsSelectedRangeWrite {
+                    setSelectedRange(element: snapshot.element, range: caretRange)
+                }
+                lastStrategy = .axValueRewrite
+                return TextEditResult(
+                    strategy: .axValueRewrite,
+                    appliedText: request.replacement,
+                    caretRange: caretRange,
+                    postVerified: true,
+                    needsResync: false,
+                    commitKind: .verifiedCommit
+                )
+            }
             if request.allowEventReplayFallback {
                 lastStrategy = .eventReplayTransaction
                 return try await replaceViaEventReplay(request: request, proxy: proxy)
@@ -399,19 +433,26 @@ final class SelectionReplacementService {
     /// Reads the field back until `replacement` shows at `location`. Hosts may update
     /// their AX text a little after a write (ChatGPT, Electron apps); reading only once
     /// took a done replacement for a failed one, and the layout wasn't switched.
+    ///
+    /// A field that can't be read for a moment is read again as well. In Telegram every
+    /// correction was counted as failed within milliseconds although the text had changed,
+    /// so the layout was switched back and the next word was checked against the typed one.
+    /// `snapshot` is nil only if the field couldn't be read at all.
     private func readBackReplacement(
         _ replacement: String,
-        at location: Int
+        at location: Int,
+        attempts: Int = 5
     ) async -> (verified: Bool, snapshot: FocusedTextSnapshot?) {
-        let range = NSRange(location: location, length: replacement.utf16.count)
         var latest: FocusedTextSnapshot?
-        for attempt in 0..<5 {
+        for attempt in 0..<attempts {
             if attempt > 0 {
                 try? await Task.sleep(nanoseconds: 40_000_000)
             }
-            latest = await MainActor.run { FocusedTextContextService.shared.snapshotFocusedText() }
-            guard let snapshot = latest else { return (false, nil) }
-            if substring(in: snapshot.fullText, range: range) == replacement {
+            guard let snapshot = await MainActor.run(body: { FocusedTextContextService.shared.snapshotFocusedText() }) else {
+                continue
+            }
+            latest = snapshot
+            if Self.showsRetypedText(replacement, at: location, in: snapshot.fullText) {
                 return (true, snapshot)
             }
         }

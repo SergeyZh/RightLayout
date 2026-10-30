@@ -1327,7 +1327,14 @@ public final class EventMonitor {
                 // than "undo" a correction that never happened.
                 await engine.resetCycling()
                 if !inputSession.isDirty {
-                    lastCommittedToken = CommittedTokenContext(token: token, separator: separator)
+                    // Unless the app made the replacement and only failed to show it in
+                    // time: the field, read again, then ends with the correction. Taking the
+                    // typed word for the last one made the next word's check fail ("e dfc"
+                    // against "у dfc"), and that word wasn't corrected.
+                    let shown = Self.textBeforeCaret(in: inputSession.lastVerifiedSnapshot, endsWith: candidate.replacement + separator)
+                        ? candidate.replacement
+                        : token
+                    lastCommittedToken = CommittedTokenContext(token: shown, separator: separator)
                 }
                 return false
             }
@@ -2294,6 +2301,16 @@ public final class EventMonitor {
     /// right before it in the field.
     nonisolated static func continuesWordBefore(_ context: VerifiedEditContext) -> Bool {
         continuesWordBefore(location: context.verifiedRange.location, in: context.snapshot.fullText)
+    }
+
+    /// Whether the text right before the caret in `snapshot` ends with `text`. False
+    /// without a snapshot, or with text selected.
+    nonisolated static func textBeforeCaret(in snapshot: FocusedTextSnapshot?, endsWith text: String) -> Bool {
+        guard let snapshot, snapshot.selectedRange.length == 0, !text.isEmpty else { return false }
+        let fullText = snapshot.fullText as NSString
+        guard snapshot.selectedRange.location <= fullText.length else { return false }
+        let beforeCaret = fullText.substring(to: snapshot.selectedRange.location)
+        return FocusedTextContextService.comparable(beforeCaret).hasSuffix(FocusedTextContextService.comparable(text))
     }
 
     nonisolated static func continuesWordBefore(location: Int, in fullText: String) -> Bool {
