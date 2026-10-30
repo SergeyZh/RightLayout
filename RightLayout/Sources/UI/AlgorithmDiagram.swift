@@ -172,7 +172,7 @@ enum AlgorithmDiagram {
                     id: "intentDetector",
                     title: "Code and links",
                     summary: "Code, URLs and commands are left as typed",
-                    detail: "Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path.",
+                    detail: "Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path. A capital inside a word marks an identifier only in Latin letters: \"ОуеИкфшты\" goes on and becomes \"JetBrains\".",
                     systemImage: "chevron.left.forwardslash.chevron.right",
                     toggle: .component(.intentDetector),
                     decidesAlone: true
@@ -497,7 +497,7 @@ enum AlgorithmDiagram {
                     id: "accessibilityWrite",
                     title: "Writing in place",
                     summary: "Exactly the checked characters are replaced",
-                    detail: "The checked characters are replaced through Accessibility and the field is read back. The caret goes after the new word and its space. An app that reports the change as made but leaves the text as it was is retyped from then on.",
+                    detail: "The checked characters are replaced through Accessibility and the field is read back. The caret goes after the new word and its space. A change the app reports as failed, or shows a moment late, counts as made once the field shows it (Telegram). An app that reports the change as made but leaves the text as it was is retyped from then on.",
                     systemImage: "character.cursor.ibeam",
                     toggle: .alwaysOn
                 ),

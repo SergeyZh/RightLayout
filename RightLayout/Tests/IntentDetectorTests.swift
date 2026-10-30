@@ -115,6 +115,47 @@ final class IntentDetectorTests: XCTestCase {
         }
     }
     
+    func testMixedCaseWordsOutsideLatinAreNotCode() async {
+        let host = TestHost()
+
+        // Identifiers are written in Latin. A Cyrillic word with a capital inside is a word
+        // typed in the wrong layout ("ОуеИкфшты" is "JetBrains") or a name ("ВКонтакте");
+        // the router decides which, so the intent check must let them through.
+        let words = [
+            "ОуеИкфшты",
+            "ВКонтакте",
+            "шЗрщту",
+            "ПрИвЕт"
+        ]
+
+        for word in words {
+            let intent = await host.check(word)
+            XCTAssertEqual(intent, .prose, "Failed on non-Latin mixed case: \(word)")
+        }
+    }
+
+    func testOtherCodeSignalsStillApplyOutsideLatin() async {
+        let host = TestHost()
+
+        let samples = [
+            "имя_переменной",
+            "КОНСТАНТА_ВСЕГДА",
+            "let значение = 1",
+            "ОуеИкфшты = 1"
+        ]
+
+        for sample in samples {
+            let intent = await host.check(sample)
+            XCTAssertEqual(intent, .code, "Failed on code: \(sample)")
+        }
+
+        // Latin mixed case is still code.
+        for id in ["JetBrains", "iPhone", "myVar"] {
+            let intent = await host.check(id)
+            XCTAssertEqual(intent, .code, "Failed on Latin identifier: \(id)")
+        }
+    }
+
     func testCLIFlagsAndOptions() async {
         let host = TestHost()
         
