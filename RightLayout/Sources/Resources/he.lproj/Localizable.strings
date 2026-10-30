@@ -404,7 +404,7 @@
 "A Latin letter that is a one-letter Russian word is fixed at once after a Russian word, or as a capital starting a sentence after one. A capital inside a sentence (\"план B\") is left alone." = "אות לטינית שהיא מילה רוסית בת אות אחת מתוקנת מיד אחרי מילה רוסית, או כאות רישית בתחילת משפט אחריה. אות רישית באמצע משפט (\"план B\") נשארת.";
 "Code and links" = "קוד וקישורים";
 "Code, URLs and commands are left as typed" = "קוד, כתובות ופקודות נשארים כפי שהוקלדו";
-"Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path." = "מזהה קוד, קישורים, נתיבים ופקודות טרמינל ומשאיר אותם כפי שהוקלדו. מילה עם לוכסנים רק בסופה (\"Lf/\") אינה נתיב.";
+"Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path. A capital inside a word marks an identifier only in Latin letters: \"ОуеИкфшты\" goes on and becomes \"JetBrains\"." = "מזהה קוד, קישורים, נתיבים ופקודות טרמינל ומשאיר אותם כפי שהוקלדו. מילה עם לוכסנים רק בסופה (\"Lf/\") אינה נתיב. אות רישית באמצע מילה מעידה על מזהה רק באותיות לטיניות: \"ОуеИкфшты\" ממשיכה הלאה והופכת ל-\"JetBrains\".";
 "Router: firm rules" = "נתב: כללים קבועים";
 "The first rule that applies decides; the weighing below is skipped." = "הכלל הראשון שחל מכריע; השקילה שלמטה מדולגת.";
 "Your rules" = "הכללים שלכם";

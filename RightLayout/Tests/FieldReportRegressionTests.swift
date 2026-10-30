@@ -398,4 +398,37 @@ final class FieldReportRegressionTests: XCTestCase {
             }
         }
     }
+
+    // MARK: "JetBrains" typed on the Russian layout was taken for code
+
+    /// Telegram, layouts en=abc and ru=russianwin: "ОуеИкфшты" was left as typed with
+    /// `why=intent=code`, because any word with a capital inside counted as an identifier.
+    func testMixedCaseWordTypedOnTheRussianLayoutIsCorrected() async {
+        await MainActor.run {
+            SettingsManager.shared.customEnabledLanguages = [.english, .russian]
+            SettingsManager.shared.activeLayouts = ["en": "abc", "ru": "russianwin"]
+        }
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            let planned = await engine.planCorrection("ОуеИкфшты", editingEnvironment: environment)
+            XCTAssertFalse(planned.trail?.contains("intent=code") == true, planned.trail ?? "-")
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("ОуеИкфшты (\(environment)): expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, "JetBrains")
+        }
+    }
+
+    func testMixedCaseRussianNameIsLeftAlone() async {
+        await MainActor.run {
+            SettingsManager.shared.customEnabledLanguages = [.english, .russian]
+            SettingsManager.shared.activeLayouts = ["en": "abc", "ru": "russianwin"]
+        }
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            let planned = await engine.planCorrection("ВКонтакте", editingEnvironment: environment)
+            if case .autoReplace(let candidate) = planned.plan {
+                XCTFail("ВКонтакте (\(environment)) was replaced with \(candidate.replacement)")
+            }
+        }
+    }
 }

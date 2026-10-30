@@ -213,6 +213,20 @@ final class DecisionPlaygroundTests: XCTestCase {
         XCTAssertEqual(typedCorrectly.events.first { $0.step == .capitalizedShortWords }?.note, .doesNotApply)
     }
 
+    func testOnlyLatinMixedCaseIsTakenForCode() async {
+        let identifier = await check("myVar")[0]
+        XCTAssertEqual(identifier.outcome, .leave)
+        let code = identifier.events.first { $0.step == .intentDetector }
+        XCTAssertEqual(code?.effect, .decided, "\(identifier.events)")
+        XCTAssertEqual(code?.note, .looksLikeCode)
+
+        // "JetBrains" typed on the Russian layout goes on to the router.
+        let word = await check("ОуеИкфшты")[0]
+        XCTAssertEqual(word.events.first { $0.step == .intentDetector }?.note, .ordinaryText, "\(word.events)")
+        XCTAssertEqual(word.outcome, .replace, "\(word.events)")
+        XCTAssertEqual(word.shown, "JetBrains")
+    }
+
     func testWithAutoCorrectionOffNothingElseIsChecked() async {
         var settings = PlaygroundApplySettings()
         settings.correctsAutomatically = false
