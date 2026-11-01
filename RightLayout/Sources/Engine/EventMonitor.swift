@@ -168,6 +168,10 @@ public final class EventMonitor {
     /// invalidating events (key auto-repeat, mouse drags) skip redundant work.
     private var invalidatedAtMutationSeq: UInt64?
     private var deferredResyncTask: Task<Void, Never>?
+    /// The field as the deferred resync last read it, while the word before its caret
+    /// waits for a second read to agree (see `wordReadIsConfirmed`), and the session's
+    /// mutation sequence then: once the user types, the read confirms nothing.
+    private var unconfirmedFieldRead: (read: FieldRead, mutationSeq: UInt64)?
     private var suppressLayoutFeedbackUntil: Date = .distantPast
     private var heldEnter: HeldEnter?
     private var heldEnterSeq: UInt64 = 0
@@ -2444,6 +2448,8 @@ public final class EventMonitor {
     /// until we return. The session is invalidated locally right away; re-reading the
     /// focused text over Accessibility is deferred until the burst of events settles.
     private func handleExternalInvalidation(reason: String, clearPhraseContext: Bool) {
+        // The caret may have moved: what the field showed before confirms nothing.
+        unconfirmedFieldRead = nil
         clearTransliterationHint()
         cancelStandaloneOptionTap()
         clearPendingCorrectionTracking()
@@ -2533,9 +2539,53 @@ public final class EventMonitor {
             applySeed(seed, snapshot: snapshot)
             return
         }
+        let seed = textContextService.seedSession(from: snapshot)
+        let read = FieldRead(snapshot)
+        let previousRead = unconfirmedFieldRead.flatMap {
+            $0.mutationSeq == inputSession.mutationSeq ? $0.read : nil
+        }
+        guard Self.wordReadIsConfirmed(
+            typedToken: seed.typedToken,
+            read: read,
+            previousRead: previousRead,
+            retry: lagRetry,
+            maxRetries: Self.deferredResyncLagRetries
+        ) else {
+            unconfirmedFieldRead = (read, inputSession.mutationSeq)
+            scheduleDeferredResync(lagRetry: lagRetry + 1)
+            return
+        }
+        unconfirmedFieldRead = nil
         // Seeding bumps the mutation sequence, so the next invalidating event takes the
         // full path again and drops the seeded state.
-        applySeed(textContextService.seedSession(from: snapshot), snapshot: snapshot)
+        applySeed(seed, snapshot: snapshot)
+    }
+
+    /// The text and caret of the focused field, as one read gave them.
+    package struct FieldRead: Equatable, Sendable {
+        let fullText: String
+        let selectedRange: NSRange
+
+        init(_ snapshot: FocusedTextSnapshot) {
+            fullText = snapshot.fullText
+            selectedRange = snapshot.selectedRange
+        }
+    }
+
+    /// Whether the word before the caret, read from the field after the caret was moved,
+    /// can become the word being typed. Right after the arrow keys bb reported the caret
+    /// where it was before the last one ("чтоб" for "чтобы", "Codex" for "Codex,"): the
+    /// word was checked without its end, and the next word was glued to the field's. So
+    /// a word is taken once a second read agrees, or when retries run out. With no word
+    /// there is nothing to get wrong, and nothing to wait for.
+    nonisolated package static func wordReadIsConfirmed(
+        typedToken: String,
+        read: FieldRead,
+        previousRead: FieldRead?,
+        retry: Int,
+        maxRetries: Int
+    ) -> Bool {
+        typedToken.isEmpty || read == previousRead || retry >= maxRetries
     }
 
     /// What the user has just typed before the caret, when the session knows it: the
