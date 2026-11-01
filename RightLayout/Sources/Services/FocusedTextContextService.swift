@@ -379,7 +379,8 @@ package final class FocusedTextContextService {
     /// Seeds the session from `snapshot` when, as far as the session knows, the user has
     /// just typed `typedTail` before the caret. Returns nil while the field is still
     /// behind those keystrokes: seeding from it made the previous word the start of the
-    /// next one in Slack ("can" + "use" was read as "canuse").
+    /// next one in Slack ("can" + "use" was read as "canuse"). That includes a field that
+    /// shows a word before the caret right after `typedTail` ended with a separator.
     nonisolated package static func seedSession(
         from snapshot: FocusedTextSnapshot,
         typedTail: String
@@ -392,7 +393,22 @@ package final class FocusedTextContextService {
         if lagsBehind(current, typedTail: typedTail) {
             return nil
         }
-        return sessionSeed(from: current)
+        let seed = sessionSeed(from: current)
+        if endsWithSeparator(typedTail), !seed.typedToken.isEmpty {
+            // The user ended a word and has typed nothing since: there is no word before
+            // the real caret, and a field that shows one hasn't caught up with the
+            // separator. Even when the session's last word was itself read wrong from the
+            // field: after the arrow keys bb gave "чтоб" for "чтобы", that hid the lag, and
+            // every next word was glued to the one before ("чтобы,skb", ",skbdblys",
+            // "dblysyjdst"), and none of them was corrected.
+            return nil
+        }
+        return seed
+    }
+
+    nonisolated private static func endsWithSeparator(_ typedTail: String) -> Bool {
+        guard let last = typedTail.last else { return false }
+        return last.isWhitespace || last.isNewline
     }
 
     // MARK: Hosts lagging behind the keystrokes

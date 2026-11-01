@@ -219,6 +219,77 @@ final class LaggingHostRegressionTests: XCTestCase {
         XCTAssertEqual(seed?.typedToken, "@Andrey.Kopysov")
     }
 
+    // MARK: A session whose last word was read wrong from the field
+
+    // From a bb report: after the arrow keys bb reported the caret where it was before
+    // the last one, the session took "чтоб" for "чтобы" and "Codex" for "Codex,". The
+    // lag check then compared the field with the wrong word, missed the lag after every
+    // next space, and glued each word to the one before it: "Codex,xnj,s", "чтобы,skb",
+    // ",skbdblys", "dblysyjdst", "yjdstdjpvj;yjcnb". None of them was a word in either
+    // layout, so "чтобы были видны новые возможности", typed in the English layout, was
+    // never corrected.
+
+    func testFieldBehindTheSeparatorAfterAWrongWordLagsBehind() {
+        let text = "плагина на провайдере Codex, чтобы "
+        XCTAssertNil(
+            FocusedTextContextService.seedSession(from: snapshot(text, caret: length(text) - 1), typedTail: "чтоб "),
+            "Not \"чтобы\", which \",skb\" was then glued to"
+        )
+    }
+
+    func testGluedWordsDoNotKeepGluingTheNextOnes() {
+        for (text, typedTail) in [
+            ("Codex, чтобы ,skb ", "чтобы,skb "),
+            ("Codex, чтобы ,skb dblys ", ",skbdblys "),
+            ("Codex, чтобы ,skb dblys yjdst ", "dblysyjdst "),
+            ("провайдере Codex, ", "Codex "),
+        ] {
+            XCTAssertNil(
+                FocusedTextContextService.seedSession(from: snapshot(text, caret: length(text) - 1), typedTail: typedTail),
+                "\(typedTail): the field hasn't shown the space yet"
+            )
+        }
+    }
+
+    func testFieldThatShowsTheSeparatorReseedsAWrongWord() {
+        // Once the field catches up, the session takes its words: the next one starts afresh.
+        let text = "плагина на провайдере Codex, чтобы "
+        let seed = FocusedTextContextService.seedSession(from: snapshot(text), typedTail: "чтоб ")
+        XCTAssertEqual(seed?.typedToken, "")
+        XCTAssertEqual(seed?.phraseContext.hasSuffix("Codex, чтобы"), true)
+    }
+
+    func testWordBeforeTheCaretIsTakenOnceTwoReadsAgree() {
+        let text = "плагина на провайдере Codex, чтобы"
+        let stale = EventMonitor.FieldRead(snapshot(text, caret: length(text) - 1))
+        let current = EventMonitor.FieldRead(snapshot(text))
+
+        XCTAssertFalse(EventMonitor.wordReadIsConfirmed(
+            typedToken: "чтоб", read: stale, previousRead: nil, retry: 0, maxRetries: 3
+        ), "One read right after the arrow keys can show the caret before the last one")
+        XCTAssertFalse(EventMonitor.wordReadIsConfirmed(
+            typedToken: "чтобы", read: current, previousRead: stale, retry: 1, maxRetries: 3
+        ), "The caret moved between the reads")
+        XCTAssertTrue(EventMonitor.wordReadIsConfirmed(
+            typedToken: "чтобы", read: current, previousRead: current, retry: 2, maxRetries: 3
+        ))
+    }
+
+    func testNoWordBeforeTheCaretNeedsNoSecondRead() {
+        let text = "Codex, чтобы "
+        XCTAssertTrue(EventMonitor.wordReadIsConfirmed(
+            typedToken: "", read: EventMonitor.FieldRead(snapshot(text)), previousRead: nil, retry: 0, maxRetries: 3
+        ))
+    }
+
+    func testFieldThatKeepsChangingIsTakenWhenRetriesRunOut() {
+        let first = EventMonitor.FieldRead(snapshot("abc"))
+        let second = EventMonitor.FieldRead(snapshot("abcd"))
+        XCTAssertTrue(EventMonitor.wordReadIsConfirmed(
+            typedToken: "abcd", read: second, previousRead: first, retry: 3, maxRetries: 3
+        ))
+    }
+
     // MARK: Retyping from a lagging caret
 
     func testRetypingStartsFromTheRealCaret() {
