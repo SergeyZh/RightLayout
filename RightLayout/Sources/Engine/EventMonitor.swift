@@ -178,8 +178,9 @@ public final class EventMonitor {
     /// After a correction made on Enter, the next Enter goes straight through.
     private var passNextEnter = false
     private let keyEventPoster = CGEventPoster()
-    /// Keystrokes typed while a correction is applied, let through once it is done.
-    private var heldUserKeys: [(event: CGEvent, proxy: CGEventTapProxy)] = []
+    /// Keystrokes typed while a correction is applied, presses and releases in the order
+    /// they came, let through once it is done.
+    private var heldUserKeys: [(type: CGEventType, event: CGEvent, proxy: CGEventTapProxy)] = []
     private var userKeyHoldDepth = 0
     /// When the current hold started; nil once it ran too long and keys go through again.
     private var userKeyHoldStartedAt: Date?
@@ -202,13 +203,19 @@ public final class EventMonitor {
     private static let laggingHostRetryDelay: UInt64 = 25_000_000
     /// Upper bound for holding the user's keystrokes while a correction is applied.
     private static let maxUserKeyHold: TimeInterval = 1.0
-    private static let maxHeldUserKeys = 32
+    private static let maxHeldUserKeys = 64
+    /// A key that reaches the tap later than this after it was pressed or released is
+    /// logged (`key_delayed`): letters that went missing in Slack have to be told apart
+    /// from keys we held up.
+    private static let keyDelayTraceThreshold = 20
 
     package private(set) var lastReplacement: (deletedCount: Int, insertedText: String)?
     /// The last hotkey conversion of selected text, so converting it again toggles back.
     private var lastSelectionConversion: SelectionConversion?
     /// Held Enters that were let through (for tests; nothing is posted with `skipEventPosting`).
     package private(set) var releasedEnterCount = 0
+    /// Held keys let through, in order (for tests; nothing is posted with `skipEventPosting`).
+    package private(set) var releasedHeldKeysForTesting: [(type: CGEventType, keyCode: CGKeyCode)] = []
     /// The word being typed (for tests).
     package var typedTokenForTesting: String { inputSession.typedToken }
     /// The words before it (for tests).
@@ -370,9 +377,12 @@ public final class EventMonitor {
 
         // Only keyboard events go through the active tap: every event it receives is held
         // until the callback returns. Mouse and scroll events are observed passively below
-        // so the pointer and scrolling never wait on us.
+        // so the pointer and scrolling never wait on us. Key releases go through it with
+        // the presses: let past a press that was held (while a word was retyped, or while
+        // we were busy), a release reached the app first, and Slack could lose the letter.
         let types: [CGEventType] = [
             .keyDown,
+            .keyUp,
             .flagsChanged
         ]
         let mask = types.reduce(CGEventMask(0)) { partial, type in
@@ -500,7 +510,9 @@ public final class EventMonitor {
         case .flagsChanged:
             return handleFlagsChanged(event)
         case .keyDown:
-            return handleKeyDown(proxy: proxy, event: event)
+            return traceIfDelayed(handleKeyDown(proxy: proxy, event: event), type: type, event: event)
+        case .keyUp:
+            return traceIfDelayed(handleKeyUp(proxy: proxy, event: event), type: type, event: event)
         default:
             return Unmanaged.passUnretained(event)
         }
@@ -599,7 +611,7 @@ public final class EventMonitor {
         let now = timeProvider.now
 
         if shouldHoldUserKey(now: now), let copy = event.copy() {
-            heldUserKeys.append((copy, proxy))
+            heldUserKeys.append((.keyDown, copy, proxy))
             return nil
         }
 
@@ -744,6 +756,44 @@ public final class EventMonitor {
         return Unmanaged.passUnretained(event)
     }
 
+    /// A key release. Held with the presses while a correction is applied, so the app
+    /// gets each key's press before its release.
+    private func handleKeyUp(proxy: CGEventTapProxy, event: CGEvent) -> Unmanaged<CGEvent>? {
+        if shouldHoldUserKey(now: timeProvider.now), let copy = event.copy() {
+            heldUserKeys.append((.keyUp, copy, proxy))
+            return nil
+        }
+        return Unmanaged.passUnretained(event)
+    }
+
+    /// Logs a key let through well after it was pressed or released: it waited for the
+    /// tap, or was held during a correction. A letter missing in the app without such a
+    /// line left here on time.
+    private func traceIfDelayed(_ passed: Unmanaged<CGEvent>?, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        guard passed != nil, trace.isEnabled,
+              let delay = Self.eventAgeMilliseconds(event),
+              delay >= Self.keyDelayTraceThreshold else {
+            return passed
+        }
+        trace.log(
+            .keyDelayed,
+            fields: [
+                "kind": type == .keyUp ? "up" : "down",
+                "key_code": String(event.getIntegerValueField(.keyboardEventKeycode)),
+                "delay_ms": String(delay)
+            ]
+        )
+        return passed
+    }
+
+    /// How long ago the event happened, by its own clock, in milliseconds.
+    static func eventAgeMilliseconds(_ event: CGEvent) -> Int? {
+        guard let timestamp = NSEvent(cgEvent: event)?.timestamp else { return nil }
+        let age = ProcessInfo.processInfo.systemUptime - timestamp
+        guard age >= 0, age < 3600 else { return nil }
+        return Int((age * 1000).rounded())
+    }
+
     // MARK: Keystrokes typed during a correction
 
     /// Holds the user's keystrokes until `endHoldingUserKeys`. Typed while a word was
@@ -786,9 +836,22 @@ public final class EventMonitor {
         userKeyHoldStartedAt = nil
         let held = heldUserKeys
         heldUserKeys.removeAll()
+        if !held.isEmpty {
+            trace.log(
+                .heldKeysReleased,
+                fields: [
+                    "presses": String(held.filter { $0.type == .keyDown }.count),
+                    "releases": String(held.filter { $0.type == .keyUp }.count)
+                ]
+            )
+        }
         for key in held {
-            guard let passed = handleEvent(proxy: key.proxy, type: .keyDown, event: key.event),
-                  !skipEventPosting else { continue }
+            guard let passed = handleEvent(proxy: key.proxy, type: key.type, event: key.event) else { continue }
+            if skipEventPosting {
+                let keyCode = CGKeyCode(key.event.getIntegerValueField(.keyboardEventKeycode))
+                releasedHeldKeysForTesting.append((key.type, keyCode))
+                continue
+            }
             passed.takeUnretainedValue().tapPostEvent(key.proxy)
         }
     }
