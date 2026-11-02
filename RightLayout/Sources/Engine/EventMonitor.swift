@@ -788,7 +788,8 @@ public final class EventMonitor {
 
     /// How long ago the event happened, by its own clock, in milliseconds.
     static func eventAgeMilliseconds(_ event: CGEvent) -> Int? {
-        guard let timestamp = NSEvent(cgEvent: event)?.timestamp else { return nil }
+        // An event made up in code may carry no time at all.
+        guard event.timestamp != 0, let timestamp = NSEvent(cgEvent: event)?.timestamp else { return nil }
         let age = ProcessInfo.processInfo.systemUptime - timestamp
         guard age >= 0, age < 3600 else { return nil }
         return Int((age * 1000).rounded())
