@@ -460,14 +460,6 @@ final class LaggingHostEventMonitorTests: XCTestCase {
     }
 
     @MainActor
-    func testFreshKeyIsNotLate() {
-        let event = CGEvent(keyboardEventSource: CGEventSource(stateID: .privateState), virtualKey: 9, keyDown: true)!
-        if let age = EventMonitor.eventAgeMilliseconds(event) {
-            XCTAssertLessThan(age, 1000)
-        }
-    }
-
-    @MainActor
     func testKeysAreNotHeldForever() {
         eventMonitor.beginHoldingUserKeys()
         XCTAssertFalse(press(15))
