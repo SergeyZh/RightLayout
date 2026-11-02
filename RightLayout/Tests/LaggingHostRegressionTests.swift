@@ -422,6 +422,7 @@ final class LaggingHostEventMonitorTests: XCTestCase {
         return passed
     }
 
+    @MainActor
     private func released() -> [String] {
         eventMonitor.releasedHeldKeysForTesting.map { "\($0.type == .keyUp ? "up" : "down") \($0.keyCode)" }
     }
