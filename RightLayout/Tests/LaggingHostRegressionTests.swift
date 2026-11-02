@@ -413,6 +413,60 @@ final class LaggingHostEventMonitorTests: XCTestCase {
     }
 
     @MainActor
+    @discardableResult
+    private func release(_ keyCode: CGKeyCode) -> Bool {
+        let proxy = unsafeBitCast(Int(0), to: CGEventTapProxy.self)
+        let event = CGEvent(keyboardEventSource: CGEventSource(stateID: .privateState), virtualKey: keyCode, keyDown: false)!
+        let passed = eventMonitor.handleEvent(proxy: proxy, type: .keyUp, event: event) != nil
+        mockTime.advance(by: 0.03)
+        return passed
+    }
+
+    private func released() -> [String] {
+        eventMonitor.releasedHeldKeysForTesting.map { "\($0.type == .keyUp ? "up" : "down") \($0.keyCode)" }
+    }
+
+    /// From a Slack report: "м" typed while "Crjkmrj" was retyped as "Сколько" went
+    /// missing. Its press was held, its release wasn't, so Slack got the release first.
+    @MainActor
+    func testKeyReleaseWaitsForItsHeldPress() {
+        eventMonitor.beginHoldingUserKeys()
+        XCTAssertFalse(press(15))
+        XCTAssertFalse(release(15), "The release must not reach the app before its press")
+        XCTAssertFalse(press(3))
+        XCTAssertFalse(release(3))
+
+        eventMonitor.endHoldingUserKeys()
+        XCTAssertEqual(released(), ["down 15", "up 15", "down 3", "up 3"])
+        XCTAssertEqual(eventMonitor.typedTokenForTesting, "rf")
+    }
+
+    @MainActor
+    func testReleaseOfAKeyPressedBeforeTheHoldKeepsItsPlace() {
+        press(5)
+        eventMonitor.beginHoldingUserKeys()
+        XCTAssertFalse(release(5))
+        XCTAssertFalse(press(15))
+        eventMonitor.endHoldingUserKeys()
+        XCTAssertEqual(released(), ["up 5", "down 15"])
+    }
+
+    @MainActor
+    func testKeyReleaseGoesStraightThroughOtherwise() {
+        press(5)
+        XCTAssertTrue(release(5))
+        XCTAssertTrue(eventMonitor.releasedHeldKeysForTesting.isEmpty)
+    }
+
+    @MainActor
+    func testFreshKeyIsNotLate() {
+        let event = CGEvent(keyboardEventSource: CGEventSource(stateID: .privateState), virtualKey: 9, keyDown: true)!
+        if let age = EventMonitor.eventAgeMilliseconds(event) {
+            XCTAssertLessThan(age, 1000)
+        }
+    }
+
+    @MainActor
     func testKeysAreNotHeldForever() {
         eventMonitor.beginHoldingUserKeys()
         XCTAssertFalse(press(15))
