@@ -259,6 +259,14 @@ final class LaggingHostRegressionTests: XCTestCase {
         XCTAssertEqual(seed?.phraseContext.hasSuffix("Codex, чтобы"), true)
     }
 
+    /// From an IntelliJ terminal report: after "св " became "cd ", the terminal showed
+    /// the line without its trailing space, and the next word was glued to "cd" ("cdorga").
+    func testFieldWithoutTheTrailingSpaceAfterAReplacementStartsANewWord() {
+        let text = "(venv) ➜ jetbrains-aws-organization-china git:(main) ✗ cd"
+        XCTAssertNil(FocusedTextContextService.seedSession(from: snapshot(text), typedTail: "cd "))
+        XCTAssertEqual(EventMonitor.trailingWord(of: "cd "), "", "The word being typed then starts afresh")
+    }
+
     func testWordBeforeTheCaretIsTakenOnceTwoReadsAgree() {
         let text = "плагина на провайдере Codex, чтобы"
         let stale = EventMonitor.FieldRead(snapshot(text, caret: length(text) - 1))

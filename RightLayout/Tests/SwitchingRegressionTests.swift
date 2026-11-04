@@ -190,6 +190,29 @@ final class SwitchingRegressionTests: XCTestCase {
         XCTAssertEqual(plan?.tail, "")
     }
 
+    /// From an IntelliJ terminal report: "св щкпф⇥" became "свorga". The shell completes
+    /// on Tab instead of inserting it; erasing it too took the space before the word.
+    func testRetypeNeverAssumesATabTheFieldDoesNotShow() {
+        let text = "(venv) ➜ repo git:(main) ✗ св щкпф"
+        let length = (text as NSString).length
+        let plan = SelectionReplacementService.verifiedReplayPlan(
+            fullText: text,
+            selection: NSRange(location: length, length: 0),
+            verifiedRange: NSRange(location: length - 4, length: 4),
+            expectedOriginal: "щкпф",
+            unverifiedSuffix: "\t"
+        )
+        XCTAssertNil(plan)
+    }
+
+    func testWordEndedByATabIsCorrectedOnlyWhenTheFieldShowsIt() {
+        XCTAssertTrue(EventMonitor.tabIsMissingFromField(separator: "\t", fieldShowsSeparator: false))
+        XCTAssertTrue(EventMonitor.tabIsMissingFromField(separator: "\t", fieldShowsSeparator: nil),
+                      "A field that can't be read can't show it either")
+        XCTAssertFalse(EventMonitor.tabIsMissingFromField(separator: "\t", fieldShowsSeparator: true))
+        XCTAssertFalse(EventMonitor.tabIsMissingFromField(separator: " ", fieldShowsSeparator: false))
+    }
+
     func testRetypeNeverRetypesANewline() {
         let plan = SelectionReplacementService.verifiedReplayPlan(
             fullText: "Gjlujnjdm",

@@ -489,7 +489,7 @@ enum AlgorithmDiagram {
                     id: "fieldCheck",
                     title: "Checking the field",
                     summary: "The word must be right before the caret",
-                    detail: "Before anything is changed, the text before the caret is read: it must end with the typed word and its space. A slow app (Slack in a long message) is read again for up to a quarter of a second. If the field shows something else, or the word is the end of a longer one, the word stays as typed and the hotkey still works.",
+                    detail: "Before anything is changed, the text before the caret is read: it must end with the typed word and its space. A slow app (Slack in a long message) is read again for up to a quarter of a second. If the field shows something else, or the word is the end of a longer one, the word stays as typed and the hotkey still works. A word ended by Tab is changed only if the field shows the Tab: a shell completes the word instead, a form moves to the next field.",
                     systemImage: "text.viewfinder",
                     toggle: .alwaysOn
                 ),
@@ -513,7 +513,7 @@ enum AlgorithmDiagram {
                     id: "blindRetype",
                     title: "Blind retyping",
                     summary: "Backspace and retype without seeing the text",
-                    detail: "Where the text can't be read, the word is erased with Backspace and retyped without a check, so only in apps known to take it, right after the word was typed, for words of up to 18 letters with high confidence, and never when the word ends a line. Elsewhere the word stays as typed and the hotkey still works.",
+                    detail: "Where the text can't be read, the word is erased with Backspace and retyped without a check, so only in apps known to take it, right after the word was typed, for words of up to 18 letters with high confidence, and never when the word ends a line or is followed by a Tab. Elsewhere the word stays as typed and the hotkey still works.",
                     systemImage: "eye.slash",
                     toggle: .alwaysOn,
                     controls: [.blindConfidence, .blindReplayDelay]
