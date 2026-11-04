@@ -469,7 +469,7 @@
 "How the chosen conversion is checked, applied or kept for later." = "איך ההמרה שנבחרה נבדקת, מוחלת או נשמרת להמשך.";
 "Words with ж, х, э, б, ю" = "מילים עם ж, х, э, б, ю";
 "\"Yf;fk\" → \"Нажал\" as a whole" = "\"Yf;fk\" ← \"Нажал\" בשלמותה";
-"A word whose punctuation keys are Russian letters is converted as a whole if the result is a known word, also in apps whose text can't be read back." = "מילה שמקשי הפיסוק בה הם אותיות רוסיות מומרת בשלמותה אם התוצאה היא מילה מוכרת, גם ביישומים שלא ניתן לקרוא את הטקסט שלהם.";
+"A word whose punctuation keys are Russian letters is converted as a whole if the result is a known word, also in apps whose text can't be read back. So is a word joined by hyphens whose parts are known words (\"Tcnm-kb\" → \"Есть-ли\")." = "מילה שמקשי הפיסוק בה הם אותיות רוסיות מומרת בשלמותה אם התוצאה היא מילה מוכרת, גם ביישומים שלא ניתן לקרוא את הטקסט שלהם. כך גם מילה עם מקפים שכל חלקיה הם מילים מוכרות (\"Tcnm-kb\" ← \"Есть-ли\").";
 "Splitting at punctuation" = "פיצול בסימני פיסוק";
 "\"ghbdtn.rfr\" → \"привет.как\"" = "\"ghbdtn.rfr\" ← \"привет.как\"";
 "A word with punctuation inside is converted both as a whole and in pieces split at the punctuation; the better result wins. Turned off, such words are converted only as a whole." = "מילה עם סימני פיסוק בתוכה מומרת גם בשלמותה וגם בחלקים שפוצלו בסימנים; התוצאה הטובה מנצחת. כשכבוי, מילים כאלה מומרות רק בשלמותן.";

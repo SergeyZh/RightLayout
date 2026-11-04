@@ -112,6 +112,34 @@ final class FieldReportRegressionTests: XCTestCase {
         }
     }
 
+    // MARK: "Tcnm-kb" and "Vjue-kb" were only converted by the hotkey in the Claude app
+
+    func testHyphenatedWordIsCorrectedWhereTextCannotBeReadBack() async {
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
+        for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+            for (typed, expected) in [("Tcnm-kb", "Есть-ли"), ("Vjue-kb", "Могу-ли")] {
+                let planned = await engine.planCorrection(typed, editingEnvironment: environment)
+                guard case .autoReplace(let candidate) = planned.plan else {
+                    XCTFail("\(typed) (\(environment)): expected an automatic correction, got \(planned.plan)")
+                    continue
+                }
+                XCTAssertEqual(candidate.replacement, expected)
+            }
+        }
+    }
+
+    func testHyphenatedWordParts() {
+        XCTAssertEqual(CorrectionDecisionPolicy.hyphenatedParts(of: "Есть-ли")?.map(String.init), ["Есть", "ли"])
+        XCTAssertEqual(CorrectionDecisionPolicy.hyphenatedParts(of: "кто-то,")?.map(String.init), ["кто", "то"])
+        XCTAssertNil(CorrectionDecisionPolicy.hyphenatedParts(of: "привет"), "No hyphen")
+        XCTAssertNil(CorrectionDecisionPolicy.hyphenatedParts(of: "a--b"), "An empty part")
+        XCTAssertNil(CorrectionDecisionPolicy.hyphenatedParts(of: "v1-beta"), "Not only letters")
+
+        XCTAssertTrue(CorrectionDecisionPolicy.isHyphenatedWord(original: "Tcnm-kb", converted: "Есть-ли"))
+        // A key that is a hyphen only after conversion is not the hyphen that was typed.
+        XCTAssertFalse(CorrectionDecisionPolicy.isHyphenatedWord(original: "Tcnm_kb", converted: "Есть-ли"))
+    }
+
     func testWordWithPunctuationKeysIsNeverConvertedInPieces() async {
         // With Hebrew on too, "Yf;fk" was split at ";" and its end converted alone:
         // "Yf;כל".
