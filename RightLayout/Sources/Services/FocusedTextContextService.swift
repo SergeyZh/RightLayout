@@ -127,6 +127,38 @@ package final class FocusedTextContextService {
         return resolved
     }
 
+    /// What the element and the two above it say they are, for the detailed log: tells
+    /// apart hosts that share an app, like the editor and the terminal of IntelliJ IDEA,
+    /// where the terminal's screen text was taken for the word being typed.
+    package func describeElement(_ element: AXUIElement) -> String {
+        var levels: [String] = []
+        var current: AXUIElement? = element
+        for _ in 0..<3 {
+            guard let node = current else { break }
+            let parts = [
+                kAXRoleAttribute as String,
+                kAXSubroleAttribute as String,
+                kAXRoleDescriptionAttribute as String,
+                kAXDescriptionAttribute as String,
+                kAXTitleAttribute as String,
+                "AXIdentifier"
+            ].compactMap { stringAttribute($0, on: node).map { String($0.prefix(40)) } }
+                .filter { !$0.isEmpty }
+            levels.append(parts.joined(separator: "|"))
+            current = elementAttribute(kAXParentAttribute as String, on: node)
+        }
+        return levels.joined(separator: " < ")
+    }
+
+    private func elementAttribute(_ name: String, on element: AXUIElement) -> AXUIElement? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        return (value as! AXUIElement)
+    }
+
     package func snapshotFocusedText() -> FocusedTextSnapshot? {
         guard let focused = resolveFocusedElementCapabilities() else { return nil }
         guard focused.capabilities.supportsFullTextRead,
