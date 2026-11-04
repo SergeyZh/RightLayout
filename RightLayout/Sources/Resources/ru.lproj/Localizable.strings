@@ -591,7 +591,7 @@
 "How the chosen conversion is checked, applied or kept for later." = "Как выбранная конвертация проверяется, применяется или откладывается.";
 "Words with ж, х, э, б, ю" = "Слова с ж, х, э, б, ю";
 "\"Yf;fk\" → \"Нажал\" as a whole" = "«Yf;fk» → «Нажал» целиком";
-"A word whose punctuation keys are Russian letters is converted as a whole if the result is a known word, also in apps whose text can't be read back." = "Слово, в котором клавиши знаков — русские буквы, конвертируется целиком, если результат — известное слово, в том числе в приложениях, где текст нельзя прочитать.";
+"A word whose punctuation keys are Russian letters is converted as a whole if the result is a known word, also in apps whose text can't be read back. So is a word joined by hyphens whose parts are known words (\"Tcnm-kb\" → \"Есть-ли\")." = "Слово, в котором клавиши знаков — русские буквы, конвертируется целиком, если результат — известное слово, в том числе в приложениях, где текст нельзя прочитать. Так же — слово через дефис, все части которого известные слова (\"Tcnm-kb\" → \"Есть-ли\").";
 "Splitting at punctuation" = "Разбиение по знакам";
 "\"ghbdtn.rfr\" → \"привет.как\"" = "«ghbdtn.rfr» → «привет.как»";
 "A word with punctuation inside is converted both as a whole and in pieces split at the punctuation; the better result wins. Turned off, such words are converted only as a whole." = "Слово со знаками внутри конвертируется и целиком, и по частям, разрезанным по знакам; побеждает лучший результат. Если выключить, такие слова конвертируются только целиком.";

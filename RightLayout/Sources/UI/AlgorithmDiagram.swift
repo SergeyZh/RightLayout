@@ -397,7 +397,7 @@ enum AlgorithmDiagram {
                     id: "punctuationKeyWords",
                     title: "Words with ж, х, э, б, ю",
                     summary: "\"Yf;fk\" → \"Нажал\" as a whole",
-                    detail: "A word whose punctuation keys are Russian letters is converted as a whole if the result is a known word, also in apps whose text can't be read back.",
+                    detail: "A word whose punctuation keys are Russian letters is converted as a whole if the result is a known word, also in apps whose text can't be read back. So is a word joined by hyphens whose parts are known words (\"Tcnm-kb\" → \"Есть-ли\").",
                     systemImage: "a.magnify",
                     toggle: .component(.punctuationKeyWords)
                 ),
