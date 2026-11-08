@@ -505,7 +505,7 @@ enum AlgorithmDiagram {
                     id: "verifiedRetype",
                     title: "Verified retyping",
                     summary: "Backspace and retype, then read back",
-                    detail: "The field is read again and the caret must be right after the word (Slack can report it a character or two behind; then the end of the text counts). The word and its space are erased with Backspace and the correction typed, followed by what you typed meanwhile. The field is read back up to five times to confirm; the caret ends up after the retyped text.",
+                    detail: "The field is read again and the caret must be right after the word (Slack and bb can report it a few characters behind; then the end of what you just typed counts, even with more text after it). The word and its space are erased with Backspace and the correction typed, followed by what you typed meanwhile. The field is read back up to five times to confirm; the caret ends up after the retyped text.",
                     systemImage: "delete.backward",
                     toggle: .alwaysOn
                 ),

@@ -187,7 +187,6 @@ package enum TextEditCommitKind: String, Sendable {
     case verifiedCommit
     case blindCommit
     case aborted
-    case rollbackAttempted
 }
 
 package enum RuntimeTraceEvent: String, Sendable {

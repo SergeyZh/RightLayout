@@ -1616,7 +1616,7 @@ public final class EventMonitor {
             return true
         case .blindCommit:
             return manual || hostRuntimeProfile.switchSafeAfterBlindReplay
-        case .aborted, .rollbackAttempted:
+        case .aborted:
             return false
         }
     }
@@ -2207,8 +2207,12 @@ public final class EventMonitor {
                     "selection": snapshot.map { NSStringFromRange($0.selectedRange) + "/" + String(($0.fullText as NSString).length) }
                 ]
             )
-            if let snapshot, FocusedTextContextService.lagsBehind(snapshot, typedTail: expectedText) {
-                // Still behind: what was typed is known better than what the field shows.
+            if let snapshot,
+               FocusedTextContextService.lagsBehind(snapshot, typedTail: expectedText)
+                || FocusedTextContextService.caretTrailsTypedText(snapshot, typedTail: expectedText) {
+                // Still behind, or the caret is: what was typed is known better than what
+                // the field shows before its caret. Taking that word converted a piece of
+                // the typed one, or the word before it (bb: "T" of "Tdhj", "Revolut:").
                 return nil
             }
             if let snapshot, let seed {
@@ -2402,6 +2406,12 @@ public final class EventMonitor {
         // Still behind: the session knows what was typed better than the field shows it.
         // Seeding from it made the previous word the start of the next one.
         guard !fieldLagsBehind else { return nil }
+        // The field shows what was typed, but after its caret: the word before the caret
+        // is stale.
+        if let latestSnapshot,
+           FocusedTextContextService.caretTrailsTypedText(latestSnapshot, typedTail: committedText + inputSession.typedToken) {
+            return nil
+        }
 
         if let latestSnapshot, let latestSeed {
             applySeed(latestSeed, snapshot: latestSnapshot, bumpSessionEpoch: true)
