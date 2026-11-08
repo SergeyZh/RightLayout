@@ -795,15 +795,20 @@ final class SelectionReplacementService {
         try? await Task.sleep(nanoseconds: replayProfile.postApplyDelay)
 
         // Only hosts with a real editable AX field can confirm the result. Elsewhere (e.g.
-        // a terminal's screen buffer) a read-back can "mismatch" a successful replay and
-        // trigger a bogus rollback.
-        let verification: SessionSyncResult
+        // a terminal's screen buffer) a read-back can "mismatch" a successful replay.
+        // A host that updates its text late is read a few more times.
+        var verification: SessionSyncResult = .unavailable
         if request.hostRuntimeProfile.editingEnvironment == .accessibility {
-            verification = await MainActor.run {
-                FocusedTextContextService.shared.verifyExpectedSuffix(request.replacement, revision: request.sessionRevision)
+            for attempt in 0..<5 {
+                if attempt > 0 {
+                    try? await Task.sleep(nanoseconds: 30_000_000)
+                }
+                verification = await MainActor.run {
+                    FocusedTextContextService.shared.verifyExpectedSuffix(request.replacement, revision: request.sessionRevision)
+                }
+                if case .mismatch = verification { continue }
+                break
             }
-        } else {
-            verification = .unavailable
         }
         switch verification {
         case .verified(let context):
@@ -836,16 +841,16 @@ final class SelectionReplacementService {
                 commitKind: .blindCommit
             )
         case .mismatch:
-            if !request.expectedOriginal.isEmpty {
-                eventPoster.postUnicodeString(request.expectedOriginal, proxy: proxy)
-            }
+            // Nothing more is typed. Typing the original back after the replacement, which
+            // usually is there and only read wrong (bb reports its caret behind the text),
+            // left both ("ЕвроTdhj"). The session is taken from the field again.
             return TextEditResult(
                 strategy: .eventReplayTransaction,
                 appliedText: request.expectedOriginal,
                 caretRange: nil,
                 postVerified: false,
                 needsResync: true,
-                commitKind: .rollbackAttempted
+                commitKind: .aborted
             )
         }
     }

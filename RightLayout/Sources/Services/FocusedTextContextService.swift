@@ -397,8 +397,9 @@ package final class FocusedTextContextService {
 
     // MARK: Hosts lagging behind the keystrokes
 
-    /// How far behind its text a host may report the caret right after typing.
-    nonisolated package static let maxCaretLag = 3
+    /// How far behind its text a host may report the caret right after typing. Slack
+    /// reported it one or two characters behind, bb (getbb.app) up to four.
+    nonisolated package static let maxCaretLag = 6
 
     /// How many of the last typed characters a host may not show yet.
     nonisolated package static let maxTextLag = 4
@@ -414,26 +415,74 @@ package final class FocusedTextContextService {
     }
 
     /// Slack (Chromium) can report the caret a character or two behind the text it
-    /// shows, for seconds in a long message ("Скуысуте|Ж"). When the field ends with the
-    /// end of `typedTail`, text the user has just typed there, and the caret is inside
-    /// it, the caret is really at the end of the text: returns that location.
+    /// shows, for seconds in a long message ("Скуысуте|Ж"); bb (getbb.app) up to four,
+    /// in a note with more lines after the one being typed ("T|dhj\n…", "Revolut:| Yf \n").
+    /// When the field shows the end of `typedTail`, text the user has just typed there,
+    /// ending at most `maxCaretLag` characters after the caret, and the caret is inside it
+    /// (or on the space typed before it), the caret is really at the end of that text:
+    /// returns that location. The text must end a word there, at the end of the field or
+    /// before a character that isn't a letter or digit.
     nonisolated package static func laggingCaretLocation(
         fullText: String,
         selection: NSRange,
         typedTail: String
     ) -> Int? {
-        let typedTail = recentTail(typedTail)
-        let length = (fullText as NSString).length
-        let tailLength = typedTail.utf16.count
-        guard selection.length == 0,
-              tailLength > 0,
-              selection.location < length,
-              length - selection.location <= maxCaretLag,
-              selection.location >= length - tailLength,
-              comparable(fullText).hasSuffix(comparable(typedTail)) else {
+        let tail = comparable(recentTail(typedTail))
+        let tailLength = tail.utf16.count
+        let text = comparable(fullText) as NSString
+        let caret = selection.location
+        guard selection.length == 0, tailLength > 0, caret < text.length else { return nil }
+        // Already right after the typed text ("хаха|ха").
+        if caret >= tailLength,
+           text.substring(with: NSRange(location: caret - tailLength, length: tailLength)) == tail {
             return nil
         }
-        return length
+
+        for end in (caret + 1)...min(text.length, caret + maxCaretLag) {
+            let start = end - tailLength
+            guard start >= 0,
+                  caret >= start || (caret == start - 1 && isSpace(at: caret, in: text)),
+                  text.substring(with: NSRange(location: start, length: tailLength)) == tail,
+                  end == text.length || !isLetterOrDigit(at: end, in: text) else {
+                continue
+            }
+            return end
+        }
+        return nil
+    }
+
+    /// Whether the field shows the end of `typedTail`, text the user has just typed,
+    /// after the reported caret or across it: the caret is behind the keystrokes, and the
+    /// word before it is a stale piece of the typed one ("T" of "Tdhj") or the word before
+    /// that ("Revolut:" for " Yf "). Converting it replaced the wrong characters.
+    nonisolated package static func caretTrailsTypedText(_ snapshot: FocusedTextSnapshot, typedTail: String) -> Bool {
+        guard snapshot.selectedRange.length == 0 else { return false }
+        let tail = comparable(recentTail(typedTail))
+        let tailLength = tail.utf16.count
+        let text = comparable(snapshot.fullText) as NSString
+        let caret = snapshot.selectedRange.location
+        guard tailLength > 1, caret < text.length else { return false }
+        let searchStart = max(0, caret + 1 - tailLength)
+        let searchEnd = min(text.length, caret + maxCaretLag + tailLength)
+        guard searchEnd - searchStart >= tailLength else { return false }
+        let found = text.range(
+            of: tail,
+            options: .literal,
+            range: NSRange(location: searchStart, length: searchEnd - searchStart)
+        )
+        return found.location != NSNotFound
+    }
+
+    nonisolated private static func isSpace(at location: Int, in text: NSString) -> Bool {
+        text.substring(with: text.rangeOfComposedCharacterSequence(at: location))
+            .allSatisfy { $0.isWhitespace && !$0.isNewline }
+    }
+
+    nonisolated private static func isLetterOrDigit(at location: Int, in text: NSString) -> Bool {
+        guard let character = text.substring(with: text.rangeOfComposedCharacterSequence(at: location)).first else {
+            return false
+        }
+        return character.isLetter || character.isNumber
     }
 
     /// Whether the text before the caret stops partway through `typedTail`, the text the

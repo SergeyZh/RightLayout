@@ -72,7 +72,7 @@ final class LaggingHostRegressionTests: XCTestCase {
             fullText: text, selection: NSRange(location: end, length: 0), typedTail: "СкуысутеЖ"))
         // Too far back to be lag.
         XCTAssertNil(FocusedTextContextService.laggingCaretLocation(
-            fullText: text, selection: NSRange(location: end - 5, length: 0), typedTail: "СкуысутеЖ"))
+            fullText: text, selection: NSRange(location: end - 7, length: 0), typedTail: "СкуысутеЖ"))
         // The field doesn't end with what was typed.
         XCTAssertNil(FocusedTextContextService.laggingCaretLocation(
             fullText: text + "x", selection: NSRange(location: end, length: 0), typedTail: "СкуысутеЖ"))
@@ -127,6 +127,105 @@ final class LaggingHostRegressionTests: XCTestCase {
         }
         XCTAssertEqual(context.verifiedText, "ghbdtn rf")
         XCTAssertEqual(NSMaxRange(context.verifiedRange), end)
+    }
+
+    // MARK: A caret behind the text, with more text after it (bb)
+
+    // From a bb (getbb.app) report: in a note, bb reported the caret two to four
+    // characters behind what was just typed, with the rest of the note after it. The
+    // hotkey took the word before the stale caret and converted "T" of "Tdhj", "cx" of
+    // "cxtne", or the word before ("Revolut:" for "Yf "), erasing from the real caret.
+
+    func testSuffixIsVerifiedWithTextAfterALaggingCaret() {
+        // selection={264, 0}/268, word_before_caret=T
+        let text = "Main Account 15290,09 Tdhj\n"
+        let end = length(text) - 1
+        guard case .verified(let context) = FocusedTextContextService.verifyExpectedSuffix(
+            "Tdhj",
+            in: snapshot(text, caret: end - 3)
+        ) else {
+            return XCTFail("A caret three characters behind the typed word must not fail the check")
+        }
+        XCTAssertEqual(context.verifiedRange, NSRange(location: end - 4, length: 4))
+        XCTAssertEqual(context.snapshot.selectedRange, NSRange(location: end, length: 0))
+    }
+
+    func testCaretFourCharactersBehindIsLag() {
+        // selection={317, 0}/321, word_before_caret=cx
+        let text = "C24 Smartkonto 0,16 cxtne "
+        let end = length(text)
+        guard case .verified(let context) = FocusedTextContextService.verifyCommittedBoundary(
+            token: "cxtne",
+            separator: " ",
+            in: snapshot(text, caret: end - 4)
+        ) else {
+            return XCTFail("A caret four characters behind the typed word must not fail the check")
+        }
+        XCTAssertEqual(context.verifiedText, "cxtne ")
+        XCTAssertEqual(NSMaxRange(context.verifiedRange), end)
+    }
+
+    func testBoundaryIsVerifiedWithTheCaretBeforeTheWord() {
+        // selection={311, 0}/316, word_before_caret=Revolut:
+        let text = "Revolut: Yf \nnext line"
+        guard case .verified(let context) = FocusedTextContextService.verifyCommittedBoundary(
+            token: "Yf",
+            separator: " ",
+            in: snapshot(text, caret: length("Revolut:"))
+        ) else {
+            return XCTFail("The caret on the space before the typed word lags behind it")
+        }
+        XCTAssertEqual(context.verifiedText, "Yf ")
+        XCTAssertEqual(context.verifiedRange, NSRange(location: length("Revolut: "), length: 3))
+    }
+
+    func testTypedTextInsideALongerWordIsNotLag() {
+        XCTAssertNil(FocusedTextContextService.laggingCaretLocation(
+            fullText: "Tdhjk", selection: NSRange(location: 1, length: 0), typedTail: "Tdhj"))
+        XCTAssertNil(FocusedTextContextService.laggingCaretLocation(
+            fullText: "Revolut:xYf ", selection: NSRange(location: 8, length: 0), typedTail: "Yf "))
+        // The caret is already right after the typed text; the same text follows.
+        XCTAssertNil(FocusedTextContextService.laggingCaretLocation(
+            fullText: "хаха ха", selection: NSRange(location: 4, length: 0), typedTail: "ха"))
+    }
+
+    func testRetypingStartsFromTheRealCaretBeforeMoreText() {
+        let text = "Main Account 15290,09 Tdhj\n"
+        let end = length(text) - 1
+        let verifiedRange = NSRange(location: end - 4, length: 4)
+        let selection = SelectionReplacementService.replaySelection(
+            fullText: text,
+            selection: NSRange(location: end - 3, length: 0),
+            verifiedRange: verifiedRange,
+            expectedOriginal: "Tdhj"
+        )
+        XCTAssertEqual(selection, NSRange(location: end, length: 0))
+        let plan = SelectionReplacementService.verifiedReplayPlan(
+            fullText: text,
+            selection: selection,
+            verifiedRange: verifiedRange,
+            expectedOriginal: "Tdhj",
+            unverifiedSuffix: ""
+        )
+        XCTAssertEqual(plan?.deleteCount, 4)
+        XCTAssertEqual(plan?.tail, "")
+    }
+
+    func testCaretTrailingTheTypedText() {
+        XCTAssertTrue(FocusedTextContextService.caretTrailsTypedText(
+            snapshot("Main Account 15290,09 Tdhj\n", caret: length("Main Account 15290,09 T")), typedTail: "Tdhj"))
+        XCTAssertTrue(FocusedTextContextService.caretTrailsTypedText(
+            snapshot("Revolut: Yf \n", caret: length("Revolut:")), typedTail: "Yf "))
+        // Further behind than a caret can lag, but the typed word is right there.
+        XCTAssertTrue(FocusedTextContextService.caretTrailsTypedText(
+            snapshot("Revolut:     Yf x", caret: length("Revolut:")), typedTail: "Yf "))
+        XCTAssertFalse(FocusedTextContextService.caretTrailsTypedText(
+            snapshot("hello world"), typedTail: "word"))
+        XCTAssertFalse(FocusedTextContextService.caretTrailsTypedText(
+            snapshot("hello world, more text", caret: length("hello")), typedTail: "word"))
+        // The glued-word case: the caret is already at the field's word.
+        XCTAssertFalse(FocusedTextContextService.caretTrailsTypedText(
+            snapshot("timeline Pffghedmnt gj;fkeqcnf"), typedTail: "Pffghedmntgj;fkeqcnf"))
     }
 
     func testDifferentTextIsStillAMismatch() {
