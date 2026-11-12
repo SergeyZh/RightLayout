@@ -180,9 +180,13 @@ extension CorrectionEngine {
            let parts = CorrectionDecisionPolicy.hyphenatedParts(of: evidence.convertedText) {
             let word = parts.joined(separator: "-")
             punctuatedWord = Substring(word)
-            isKnownWord = frequencyModel.map { model in
-                model.contains(word) || parts.allSatisfy { model.contains(String($0)) }
-            } ?? false
+            // The frequency lists leave out words under three letters ("ли", "то"): those
+            // come from the built-in lexicon.
+            let isKnown: (String) -> Bool = { part in
+                frequencyModel?.contains(part) == true
+                    || BuiltinLexicon.contains(part, language: evidence.targetLanguage)
+            }
+            isKnownWord = isKnown(word) || parts.allSatisfy { isKnown(String($0)) }
         }
         let isWordTypedWithPunctuationKeys = DecisionPipeline.isEnabled(.punctuationKeyWords) && isKnownWord
         let usesFastLane = evidence.tokenKind == .plain
