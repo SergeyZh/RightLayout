@@ -538,7 +538,7 @@
 "A single Cyrillic or Hebrew letter is kept. A single Latin letter is kept unless it is a Russian preposition typed on the English layout (\"y\" → \"н\")." = "A single Cyrillic or Hebrew letter is kept. A single Latin letter is kept unless it is a Russian preposition typed on the English layout (\"y\" → \"н\").";
 "Mixed alphabets" = "Mixed alphabets";
 "Latin and Cyrillic in one word: left as typed" = "Latin and Cyrillic in one word: left as typed";
-"A word with letters of several alphabets was typed that way on purpose and is not converted." = "A word with letters of several alphabets was typed that way on purpose and is not converted.";
+"A word with letters of several alphabets was typed that way on purpose and is not converted. The hotkey converts only its part in the other alphabet; a mark typed after letters already in the right one stays (\"Эmain\"\" → \"\"main\"\")." = "A word with letters of several alphabets was typed that way on purpose and is not converted. The hotkey converts only its part in the other alphabet; a mark typed after letters already in the right one stays (\"Эmain\"\" → \"\"main\"\").";
 "Technical tokens" = "Technical tokens";
 "File names, UUIDs, versions" = "File names, UUIDs, versions";
 "File names with common extensions, UUIDs, version numbers and numeric labels are never converted." = "File names with common extensions, UUIDs, version numbers and numeric labels are never converted.";

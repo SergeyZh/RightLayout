@@ -415,7 +415,7 @@
 "A single Cyrillic or Hebrew letter is kept. A single Latin letter is kept unless it is a Russian preposition typed on the English layout (\"y\" → \"н\")." = "אות קירילית או עברית בודדת נשארת. אות לטינית בודדת נשארת, אלא אם היא מילת יחס רוסית שהוקלדה בפריסה האנגלית (\"y\" ← \"н\").";
 "Mixed alphabets" = "אלפביתים מעורבים";
 "Latin and Cyrillic in one word: left as typed" = "לטינית וקירילית במילה אחת: נשאר כפי שהוקלד";
-"A word with letters of several alphabets was typed that way on purpose and is not converted." = "מילה עם אותיות מכמה אלפביתים הוקלדה כך בכוונה ואינה מומרת.";
+"A word with letters of several alphabets was typed that way on purpose and is not converted. The hotkey converts only its part in the other alphabet; a mark typed after letters already in the right one stays (\"Эmain\"\" → \"\"main\"\")." = "מילה עם אותיות מכמה אלפביתים הוקלדה כך בכוונה ואינה מומרת. מקש הקיצור ממיר רק את החלק שלה באלפבית האחר; סימן שהוקלד אחרי אותיות שכבר באלפבית הנכון נשאר (\"Эmain\"\" ← \"\"main\"\").";
 "Technical tokens" = "אסימונים טכניים";
 "File names, UUIDs, versions" = "שמות קבצים, UUID, גרסאות";
 "File names with common extensions, UUIDs, version numbers and numeric labels are never converted." = "שמות קבצים עם סיומות נפוצות, UUID, מספרי גרסה ותוויות מספריות לעולם אינם מומרים.";

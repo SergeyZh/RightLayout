@@ -206,7 +206,7 @@ enum AlgorithmDiagram {
                     id: "mixedScriptGuard",
                     title: "Mixed alphabets",
                     summary: "Latin and Cyrillic in one word: left as typed",
-                    detail: "A word with letters of several alphabets was typed that way on purpose and is not converted.",
+                    detail: "A word with letters of several alphabets was typed that way on purpose and is not converted. The hotkey converts only its part in the other alphabet; a mark typed after letters already in the right one stays (\"Эmain\"\" → \"\"main\"\").",
                     systemImage: "textformat",
                     toggle: .component(.mixedScriptGuard),
                     decidesAlone: true
