@@ -132,6 +132,10 @@ public final class EventMonitor {
     package var skipSecureInputCheck = false
     package var skipEventPosting = false
 
+    /// Fed synthetic keys (tests). Apps activated on the Mac running the tests aren't
+    /// where these keys are typed.
+    private var isSyntheticHost: Bool { skipEventPosting || skipPIDCheck }
+
     private var inputSession = InputSession()
     private var lastActiveApp: String = ""
     /// Keys go to the Algorithm page's test field, which checks words itself.
@@ -301,7 +305,7 @@ public final class EventMonitor {
         if let id = lastCorrectionTrackingId {
             if let transaction = await engine.transaction(for: id) {
                 let currentBundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-                guard transaction.bundleId == nil || transaction.bundleId == currentBundleId else {
+                guard isSyntheticHost || transaction.bundleId == nil || transaction.bundleId == currentBundleId else {
                     return
                 }
                 if let transactionEpoch = transaction.sessionEpoch,
@@ -337,7 +341,9 @@ public final class EventMonitor {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.resetOnAppChange()
+                // Switching apps on the Mac running the tests reset a test's session.
+                guard let self, !self.isSyntheticHost else { return }
+                self.resetOnAppChange()
             }
         }
     }
@@ -1080,7 +1086,6 @@ public final class EventMonitor {
             return false
         }
 
-        let isSyntheticHost = skipEventPosting || skipPIDCheck
         let focusedCapabilities = textContextService.resolveFocusedElementCapabilities()
         let bundleId = focusedCapabilities?.bundleId ?? lastActiveApp
         let hostProfile = currentHostRuntimeProfile(bundleId: bundleId, capabilities: focusedCapabilities?.capabilities)
