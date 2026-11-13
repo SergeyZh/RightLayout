@@ -146,6 +146,31 @@ package enum CorrectionDecisionPolicy {
         return core.allSatisfy(\.isLetter) ? core : nil
     }
 
+    /// The parts of a word joined by hyphens, without punctuation stuck to its edges:
+    /// "Есть-ли" → ["Есть", "ли"], "кто-то," → ["кто", "то"]. Nil unless it has a hyphen
+    /// and every part is letters.
+    package static func hyphenatedParts(of text: String) -> [Substring]? {
+        guard let first = text.firstIndex(where: { !edgePunctuation.contains($0) }),
+              let last = text.lastIndex(where: { !edgePunctuation.contains($0) }) else {
+            return nil
+        }
+        let parts = text[first...last].split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count >= 2, parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isLetter) }) else {
+            return nil
+        }
+        return parts
+    }
+
+    /// Whether `converted` is letters joined by the hyphens typed in `original`: the
+    /// hyphen key is a hyphen on both layouts, so "Tcnm-kb" is "Есть-ли". Such words were
+    /// never corrected on their own, the hyphen made them "punctuated".
+    package static func isHyphenatedWord(original: String, converted: String) -> Bool {
+        guard original.count == converted.count, hyphenatedParts(of: converted) != nil else {
+            return false
+        }
+        return zip(original, converted).allSatisfy { ($0 == "-") == ($1 == "-") }
+    }
+
     /// Whether `original` is a word with punctuation only at its edges, and that
     /// punctuation is still punctuation after conversion: "Вщту!" → "Done!" and
     /// "Lf/" → "Да." are, while "ghbdtn." → "приветю" (the period is a letter key in
@@ -207,7 +232,8 @@ package enum CorrectionDecisionPolicy {
             // ("Cgfcb,j!" is "Спасибо!").
             let convertsToWord = letterCount >= 2
                 && (evidence.convertedText.allSatisfy({ $0.isLetter || $0.isWhitespace || $0 == "«" || $0 == "»" || $0 == "\"" || $0 == "'" })
-                    || letterCore(of: evidence.convertedText) != nil)
+                    || letterCore(of: evidence.convertedText) != nil
+                    || isHyphenatedWord(original: evidence.original, converted: evidence.convertedText))
             switch environment {
             case .accessibility:
                 if convertsToWord,

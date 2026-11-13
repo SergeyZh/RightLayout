@@ -692,7 +692,11 @@ final class SelectionReplacementService {
         guard typedSince.count <= 4, !typedSince.contains(where: \.isNewline) else { return nil }
 
         if typedSince.isEmpty, !unverifiedSuffix.isEmpty {
-            guard unverifiedSuffix.count <= 4, !unverifiedSuffix.contains(where: \.isNewline) else { return nil }
+            // A Tab the field doesn't show may never have been inserted (a shell completes
+            // the word instead): erasing it too took the space before the word.
+            guard unverifiedSuffix.count <= 4,
+                  !unverifiedSuffix.contains(where: \.isNewline),
+                  !unverifiedSuffix.contains("\t") else { return nil }
             return (expectedOriginal.count + unverifiedSuffix.count, unverifiedSuffix, true)
         }
         return (expectedOriginal.count + typedSince.count, typedSince, false)

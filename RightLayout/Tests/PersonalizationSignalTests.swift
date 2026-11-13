@@ -158,12 +158,18 @@ final class PersonalizationSignalTests: XCTestCase {
         let early = await engine.lastReportedSignal
         XCTAssertNil(early, "Fixing the end of a corrected word doesn't take the correction back")
 
-        // Erasing the rest of "привет" does.
+        // Erasing the rest of "привет" and typing again does.
         for _ in 0..<4 {
             mockTime.advance(by: 0.1)
             typeKey(code: 51)
         }
-        
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let beforeTyping = await engine.lastReportedSignal
+        XCTAssertNil(beforeTyping, "Not yet: the user may be erasing the text before it too")
+
+        mockTime.advance(by: 0.1)
+        await typeString("g")
+
         // Allow async reporting
         try await Task.sleep(nanoseconds: 50_000_000)
         
@@ -175,11 +181,39 @@ final class PersonalizationSignalTests: XCTestCase {
         // If signal is not nil, it works.
     }
     
-    func testLayoutSwitchDetection() async throws {
-        // 1. Trigger correction
+    /// From an IntelliJ terminal report: the whole command was erased to be typed again,
+    /// and the retyped "св" stayed as typed every other time.
+    func testErasingTextBeforeTheCorrectionDoesNotTakeItBack() async throws {
         mockTime.currentTime = Date()
-        await typeString("ghbdtn ") 
+        await typeString("a ghbdtn ")
         try await Task.sleep(nanoseconds: 1_000_000_000)
+
+        // "привет " and the space before it.
+        for _ in 0..<8 {
+            mockTime.advance(by: 0.1)
+            typeKey(code: 51)
+        }
+        mockTime.advance(by: 0.1)
+        await typeString("g")
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let signal = await engine.lastReportedSignal
+        XCTAssertNil(signal, "Clearing the line to type it again isn't taking the correction back")
+    }
+
+    func testLayoutSwitchDetection() async throws {
+        // Simulate returning to the machine's current layout after a correction into
+        // another language. A notification for the correction's target layout is not
+        // negative feedback, so hard-coding Russian failed on a Russian-layout Mac.
+        // autoSwitchLayout is off: the test never changes the user's input source.
+        let currentLanguage = InputSourceManager.shared.currentLanguage()
+        let (typed, corrected) = currentLanguage == .russian
+            ? ("руддщ ", "hello ")
+            : ("ghbdtn ", "привет ")
+        mockTime.currentTime = Date()
+        await typeString(typed)
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        XCTAssertEqual(monitor.lastReplacement?.insertedText, corrected)
         
         // 2. Post layout change notification
         mockTime.advance(by: 0.5) // Within window

@@ -167,12 +167,28 @@ extension CorrectionEngine {
         // A word whose punctuation keys are letters on the other layout ("Yf;fk" is
         // "Нажал", "Cgfcb,j!" is "Спасибо!") is converted whole: split at those keys, its
         // pieces were converted on their own ("Yf;כל").
-        let punctuatedWord = evidence.tokenKind == .punctuated && evidence.isCorrection
+        // So is a word joined by a hyphen whose parts are words ("Tcnm-kb" is "Есть-ли").
+        let frequencyModel = WordFrequencyModel.shared(evidence.targetLanguage.rawValue)
+        var punctuatedWord = evidence.tokenKind == .punctuated && evidence.isCorrection
             ? CorrectionDecisionPolicy.letterCore(of: evidence.convertedText)
             : nil
-        let isWordTypedWithPunctuationKeys = DecisionPipeline.isEnabled(.punctuationKeyWords) && (punctuatedWord.map {
-            WordFrequencyModel.shared(evidence.targetLanguage.rawValue)?.contains(String($0)) ?? false
-        } ?? false)
+        var isKnownWord = punctuatedWord.map { frequencyModel?.contains(String($0)) ?? false } ?? false
+        if punctuatedWord == nil,
+           evidence.tokenKind == .punctuated,
+           evidence.isCorrection,
+           CorrectionDecisionPolicy.isHyphenatedWord(original: evidence.original, converted: evidence.convertedText),
+           let parts = CorrectionDecisionPolicy.hyphenatedParts(of: evidence.convertedText) {
+            let word = parts.joined(separator: "-")
+            punctuatedWord = Substring(word)
+            // The frequency lists leave out words under three letters ("ли", "то"): those
+            // come from the built-in lexicon.
+            let isKnown: (String) -> Bool = { part in
+                frequencyModel?.contains(part) == true
+                    || BuiltinLexicon.contains(part, language: evidence.targetLanguage)
+            }
+            isKnownWord = isKnown(word) || parts.allSatisfy { isKnown(String($0)) }
+        }
+        let isWordTypedWithPunctuationKeys = DecisionPipeline.isEnabled(.punctuationKeyWords) && isKnownWord
         let usesFastLane = evidence.tokenKind == .plain
             || evidence.isWhitelistedShort
             || isShortWithEdgePunctuation

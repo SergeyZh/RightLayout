@@ -318,6 +318,85 @@ final class LaggingHostRegressionTests: XCTestCase {
         XCTAssertEqual(seed?.typedToken, "@Andrey.Kopysov")
     }
 
+    // MARK: A session whose last word was read wrong from the field
+
+    // From a bb report: after the arrow keys bb reported the caret where it was before
+    // the last one, the session took "чтоб" for "чтобы" and "Codex" for "Codex,". The
+    // lag check then compared the field with the wrong word, missed the lag after every
+    // next space, and glued each word to the one before it: "Codex,xnj,s", "чтобы,skb",
+    // ",skbdblys", "dblysyjdst", "yjdstdjpvj;yjcnb". None of them was a word in either
+    // layout, so "чтобы были видны новые возможности", typed in the English layout, was
+    // never corrected.
+
+    func testFieldBehindTheSeparatorAfterAWrongWordLagsBehind() {
+        let text = "плагина на провайдере Codex, чтобы "
+        XCTAssertNil(
+            FocusedTextContextService.seedSession(from: snapshot(text, caret: length(text) - 1), typedTail: "чтоб "),
+            "Not \"чтобы\", which \",skb\" was then glued to"
+        )
+    }
+
+    func testGluedWordsDoNotKeepGluingTheNextOnes() {
+        for (text, typedTail) in [
+            ("Codex, чтобы ,skb ", "чтобы,skb "),
+            ("Codex, чтобы ,skb dblys ", ",skbdblys "),
+            ("Codex, чтобы ,skb dblys yjdst ", "dblysyjdst "),
+            ("провайдере Codex, ", "Codex "),
+        ] {
+            XCTAssertNil(
+                FocusedTextContextService.seedSession(from: snapshot(text, caret: length(text) - 1), typedTail: typedTail),
+                "\(typedTail): the field hasn't shown the space yet"
+            )
+        }
+    }
+
+    func testFieldThatShowsTheSeparatorReseedsAWrongWord() {
+        // Once the field catches up, the session takes its words: the next one starts afresh.
+        let text = "плагина на провайдере Codex, чтобы "
+        let seed = FocusedTextContextService.seedSession(from: snapshot(text), typedTail: "чтоб ")
+        XCTAssertEqual(seed?.typedToken, "")
+        XCTAssertEqual(seed?.phraseContext.hasSuffix("Codex, чтобы"), true)
+    }
+
+    /// From an IntelliJ terminal report: after "св " became "cd ", the terminal showed
+    /// the line without its trailing space, and the next word was glued to "cd" ("cdorga").
+    func testFieldWithoutTheTrailingSpaceAfterAReplacementStartsANewWord() {
+        let text = "(venv) ➜ jetbrains-aws-organization-china git:(main) ✗ cd"
+        XCTAssertNil(FocusedTextContextService.seedSession(from: snapshot(text), typedTail: "cd "))
+        XCTAssertEqual(EventMonitor.trailingWord(of: "cd "), "", "The word being typed then starts afresh")
+    }
+
+    func testWordBeforeTheCaretIsTakenOnceTwoReadsAgree() {
+        let text = "плагина на провайдере Codex, чтобы"
+        let stale = EventMonitor.FieldRead(snapshot(text, caret: length(text) - 1))
+        let current = EventMonitor.FieldRead(snapshot(text))
+
+        XCTAssertFalse(EventMonitor.wordReadIsConfirmed(
+            typedToken: "чтоб", read: stale, previousRead: nil, retry: 0, maxRetries: 3
+        ), "One read right after the arrow keys can show the caret before the last one")
+        XCTAssertFalse(EventMonitor.wordReadIsConfirmed(
+            typedToken: "чтобы", read: current, previousRead: stale, retry: 1, maxRetries: 3
+        ), "The caret moved between the reads")
+        XCTAssertTrue(EventMonitor.wordReadIsConfirmed(
+            typedToken: "чтобы", read: current, previousRead: current, retry: 2, maxRetries: 3
+        ))
+    }
+
+    func testNoWordBeforeTheCaretNeedsNoSecondRead() {
+        let text = "Codex, чтобы "
+        XCTAssertTrue(EventMonitor.wordReadIsConfirmed(
+            typedToken: "", read: EventMonitor.FieldRead(snapshot(text)), previousRead: nil, retry: 0, maxRetries: 3
+        ))
+    }
+
+    func testFieldThatKeepsChangingIsTakenWhenRetriesRunOut() {
+        let first = EventMonitor.FieldRead(snapshot("abc"))
+        let second = EventMonitor.FieldRead(snapshot("abcd"))
+        XCTAssertTrue(EventMonitor.wordReadIsConfirmed(
+            typedToken: "abcd", read: second, previousRead: first, retry: 3, maxRetries: 3
+        ))
+    }
+
     // MARK: Retyping from a lagging caret
 
     func testRetypingStartsFromTheRealCaret() {
@@ -438,6 +517,53 @@ final class LaggingHostEventMonitorTests: XCTestCase {
         XCTAssertEqual(eventMonitor.typedTokenForTesting, "")
         eventMonitor.endHoldingUserKeys()
         XCTAssertEqual(eventMonitor.typedTokenForTesting, "r")
+    }
+
+    @MainActor
+    @discardableResult
+    private func release(_ keyCode: CGKeyCode) -> Bool {
+        let proxy = unsafeBitCast(Int(0), to: CGEventTapProxy.self)
+        let event = CGEvent(keyboardEventSource: CGEventSource(stateID: .privateState), virtualKey: keyCode, keyDown: false)!
+        let passed = eventMonitor.handleEvent(proxy: proxy, type: .keyUp, event: event) != nil
+        mockTime.advance(by: 0.03)
+        return passed
+    }
+
+    @MainActor
+    private func released() -> [String] {
+        eventMonitor.releasedHeldKeysForTesting.map { "\($0.type == .keyUp ? "up" : "down") \($0.keyCode)" }
+    }
+
+    /// From a Slack report: "м" typed while "Crjkmrj" was retyped as "Сколько" went
+    /// missing. Its press was held, its release wasn't, so Slack got the release first.
+    @MainActor
+    func testKeyReleaseWaitsForItsHeldPress() {
+        eventMonitor.beginHoldingUserKeys()
+        XCTAssertFalse(press(15))
+        XCTAssertFalse(release(15), "The release must not reach the app before its press")
+        XCTAssertFalse(press(3))
+        XCTAssertFalse(release(3))
+
+        eventMonitor.endHoldingUserKeys()
+        XCTAssertEqual(released(), ["down 15", "up 15", "down 3", "up 3"])
+        XCTAssertEqual(eventMonitor.typedTokenForTesting, "rf")
+    }
+
+    @MainActor
+    func testReleaseOfAKeyPressedBeforeTheHoldKeepsItsPlace() {
+        press(5)
+        eventMonitor.beginHoldingUserKeys()
+        XCTAssertFalse(release(5))
+        XCTAssertFalse(press(15))
+        eventMonitor.endHoldingUserKeys()
+        XCTAssertEqual(released(), ["up 5", "down 15"])
+    }
+
+    @MainActor
+    func testKeyReleaseGoesStraightThroughOtherwise() {
+        press(5)
+        XCTAssertTrue(release(5))
+        XCTAssertTrue(eventMonitor.releasedHeldKeysForTesting.isEmpty)
     }
 
     @MainActor

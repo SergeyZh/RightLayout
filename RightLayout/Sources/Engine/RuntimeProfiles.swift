@@ -201,6 +201,8 @@ package enum RuntimeTraceEvent: String, Sendable {
     case layoutSwitchObserved = "layout_switch_observed"
     case sessionInvalidated = "session_invalidated"
     case keyTyped = "key_typed"
+    case keyDelayed = "key_delayed"
+    case heldKeysReleased = "held_keys_released"
     case backspace = "backspace"
     case bufferTimeout = "buffer_timeout"
     case secureInputChanged = "secure_input_changed"

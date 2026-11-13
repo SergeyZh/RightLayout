@@ -127,6 +127,38 @@ package final class FocusedTextContextService {
         return resolved
     }
 
+    /// What the element and the two above it say they are, for the detailed log: tells
+    /// apart hosts that share an app, like the editor and the terminal of IntelliJ IDEA,
+    /// where the terminal's screen text was taken for the word being typed.
+    package func describeElement(_ element: AXUIElement) -> String {
+        var levels: [String] = []
+        var current: AXUIElement? = element
+        for _ in 0..<3 {
+            guard let node = current else { break }
+            let parts = [
+                kAXRoleAttribute as String,
+                kAXSubroleAttribute as String,
+                kAXRoleDescriptionAttribute as String,
+                kAXDescriptionAttribute as String,
+                kAXTitleAttribute as String,
+                "AXIdentifier"
+            ].compactMap { stringAttribute($0, on: node).map { String($0.prefix(40)) } }
+                .filter { !$0.isEmpty }
+            levels.append(parts.joined(separator: "|"))
+            current = elementAttribute(kAXParentAttribute as String, on: node)
+        }
+        return levels.joined(separator: " < ")
+    }
+
+    private func elementAttribute(_ name: String, on element: AXUIElement) -> AXUIElement? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        return (value as! AXUIElement)
+    }
+
     package func snapshotFocusedText() -> FocusedTextSnapshot? {
         guard let focused = resolveFocusedElementCapabilities() else { return nil }
         guard focused.capabilities.supportsFullTextRead,
@@ -379,7 +411,8 @@ package final class FocusedTextContextService {
     /// Seeds the session from `snapshot` when, as far as the session knows, the user has
     /// just typed `typedTail` before the caret. Returns nil while the field is still
     /// behind those keystrokes: seeding from it made the previous word the start of the
-    /// next one in Slack ("can" + "use" was read as "canuse").
+    /// next one in Slack ("can" + "use" was read as "canuse"). That includes a field that
+    /// shows a word before the caret right after `typedTail` ended with a separator.
     nonisolated package static func seedSession(
         from snapshot: FocusedTextSnapshot,
         typedTail: String
@@ -392,7 +425,22 @@ package final class FocusedTextContextService {
         if lagsBehind(current, typedTail: typedTail) {
             return nil
         }
-        return sessionSeed(from: current)
+        let seed = sessionSeed(from: current)
+        if endsWithSeparator(typedTail), !seed.typedToken.isEmpty {
+            // The user ended a word and has typed nothing since: there is no word before
+            // the real caret, and a field that shows one hasn't caught up with the
+            // separator. Even when the session's last word was itself read wrong from the
+            // field: after the arrow keys bb gave "чтоб" for "чтобы", that hid the lag, and
+            // every next word was glued to the one before ("чтобы,skb", ",skbdblys",
+            // "dblysyjdst"), and none of them was corrected.
+            return nil
+        }
+        return seed
+    }
+
+    nonisolated private static func endsWithSeparator(_ typedTail: String) -> Bool {
+        guard let last = typedTail.last else { return false }
+        return last.isWhitespace || last.isNewline
     }
 
     // MARK: Hosts lagging behind the keystrokes
