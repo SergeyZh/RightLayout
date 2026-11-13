@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import CoreGraphics
 @testable import RightLayout
 
@@ -194,5 +195,25 @@ final class AutoCorrectionSwitchTests: XCTestCase {
         try await doubleTapTrigger()
 
         XCTAssertNil(eventMonitor.lastReplacement)
+    }
+
+    // MARK: The Mac running the tests
+
+    /// Switching apps on the Mac running the tests reset a test's session: the word typed
+    /// so far was lost and the app became the real one, so a test failed only when the
+    /// switch came while it ran. A monitor fed synthetic keys stays in the test's app.
+    func testSyntheticMonitorIgnoresTheMachinesAppSwitches() async throws {
+        typeWrongLayoutWord()
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: NSWorkspace.shared
+        )
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(eventMonitor.activeAppForTesting, Self.otherApp)
+        XCTAssertEqual(eventMonitor.typedTokenForTesting, "ghbdtn")
+        press(49)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(inserted, "привет")
     }
 }
