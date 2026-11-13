@@ -538,7 +538,7 @@
 "A single Cyrillic or Hebrew letter is kept. A single Latin letter is kept unless it is a Russian preposition typed on the English layout (\"y\" → \"н\")." = "Одна кириллическая или ивритская буква остаётся. Одна латинская буква остаётся, если только это не русский предлог в английской раскладке («y» → «н»).";
 "Mixed alphabets" = "Смесь алфавитов";
 "Latin and Cyrillic in one word: left as typed" = "Латиница и кириллица в одном слове: как есть";
-"A word with letters of several alphabets was typed that way on purpose and is not converted." = "Слово с буквами нескольких алфавитов набрано так намеренно и не конвертируется.";
+"A word with letters of several alphabets was typed that way on purpose and is not converted. The hotkey converts only its part in the other alphabet; a mark typed after letters already in the right one stays (\"Эmain\"\" → \"\"main\"\")." = "Слово с буквами нескольких алфавитов набрано так намеренно и не конвертируется. Горячая клавиша конвертирует только его часть в другом алфавите; знак, набранный после букв уже нужного алфавита, остаётся («Эmain\"» → «\"main\"»).";
 "Technical tokens" = "Технические токены";
 "File names, UUIDs, versions" = "Имена файлов, UUID, версии";
 "File names with common extensions, UUIDs, version numbers and numeric labels are never converted." = "Имена файлов с обычными расширениями, UUID, номера версий и числовые метки никогда не конвертируются.";

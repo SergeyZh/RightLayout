@@ -74,12 +74,18 @@ extension CorrectionEngine {
         let enabled = await settings.enabledLanguages
         for (from, to) in conversions where enabled.contains(from) && enabled.contains(to) {
             let hyp = hypothesisFor(source: from, target: to)
-            let variants = LayoutMapper.shared.convertAllVariants(text, from: from, to: to, activeLayouts: activeLayouts)
-
-            guard let converted = variants.lazy.map(\.result).first(where: { candidate in
-                candidate != text && seen.insert(candidate).inserted
-            }) else {
-                continue
+            let converted: String
+            if let mixed = convertWrongLayoutPart(of: text, from: from, to: to, activeLayouts: activeLayouts) {
+                guard mixed != text, seen.insert(mixed).inserted else { continue }
+                converted = mixed
+            } else {
+                let variants = LayoutMapper.shared.convertAllVariants(text, from: from, to: to, activeLayouts: activeLayouts)
+                guard let whole = variants.lazy.map(\.result).first(where: { candidate in
+                    candidate != text && seen.insert(candidate).inserted
+                }) else {
+                    continue
+                }
+                converted = whole
             }
 
             // Pick best-looking output by lightweight scoring. This strongly prefers real words
@@ -142,6 +148,57 @@ extension CorrectionEngine {
         logger.info("🔄 Built \(finalCandidates.count) alternatives for Manual Cycle (Best -> Others -> Original)")
         
         return await cycleCorrection(bundleId: bundleId)
+    }
+
+    /// A word typed partly in each layout ("Эmain\"": the quote key on Russian, then
+    /// `main"` on English) already has letters of `to`'s alphabet. Those letters are
+    /// right, and so is every mark typed after them before a letter of another alphabet:
+    /// only the rest is converted, so the hotkey gives `"main"`, not `"main@`. A mark
+    /// before the first letter goes with that letter. Returns nil when the word has no
+    /// letters of `to`'s alphabet, and the whole word is converted as before.
+    func convertWrongLayoutPart(
+        of text: String,
+        from: Language,
+        to: Language,
+        activeLayouts: [String: String]
+    ) -> String? {
+        func alphabet(_ ch: Character) -> Language? {
+            guard ch.isLetter else { return nil }
+            switch ch.unicodeScalars.first?.value ?? 0 {
+            case 0x0400...0x04FF: return .russian
+            case 0x0590...0x05FF: return .hebrew
+            default: return .english
+            }
+        }
+
+        let chars = Array(text)
+        let letters = chars.map(alphabet)
+        guard letters.contains(to), letters.contains(where: { $0 != nil && $0 != to }) else { return nil }
+
+        // Whether each character is already in `to`'s layout: a letter by its alphabet,
+        // a mark by the letter before it, or after it at the start.
+        var isRight = [Bool](repeating: false, count: chars.count)
+        var previous = letters.first(where: { $0 != nil }) ?? nil
+        for i in chars.indices {
+            if let letter = letters[i] { previous = letter }
+            isRight[i] = previous == to
+        }
+
+        var out = ""
+        var i = 0
+        while i < chars.count {
+            var j = i
+            while j < chars.count, isRight[j] == isRight[i] { j += 1 }
+            let run = String(chars[i..<j])
+            if isRight[i] {
+                out += run
+            } else {
+                out += LayoutMapper.shared.convertAllVariants(run, from: from, to: to, activeLayouts: activeLayouts)
+                    .first?.result ?? run
+            }
+            i = j
+        }
+        return out
     }
 
     // MARK: - Cycle Through Alternatives

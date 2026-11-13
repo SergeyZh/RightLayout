@@ -459,4 +459,35 @@ final class FieldReportRegressionTests: XCTestCase {
             }
         }
     }
+
+    // MARK: A word typed partly in each layout
+
+    /// bb, layouts en=abc and ru=russianwin: the opening quote was typed on the Russian
+    /// layout ("Э"), then `main"` on English. The hotkey converted the whole word and the
+    /// closing quote, already right, became "@": `"main@`.
+    func testHotkeyConvertsOnlyThePartTypedInTheWrongLayout() async {
+        await MainActor.run {
+            SettingsManager.shared.customEnabledLanguages = [.english, .russian]
+            SettingsManager.shared.activeLayouts = ["en": "abc", "ru": "russianwin"]
+        }
+        let expected = [
+            "Эmain\"": "\"main\"",
+            "Эmain": "\"main",
+        ]
+        for (typed, converted) in expected {
+            await engine.resetCycling()
+            let corrected = await engine.correctLastWord(typed)
+            XCTAssertEqual(corrected, converted, typed)
+        }
+    }
+
+    func testMixedWordKeepsMarksTypedAfterTheRightLetters() async {
+        let layouts = ["en": "abc", "ru": "russianwin"]
+        let quoted = await engine.convertWrongLayoutPart(of: "Эmain\"", from: .russian, to: .english, activeLayouts: layouts)
+        XCTAssertEqual(quoted, "\"main\"")
+        let afterRussian = await engine.convertWrongLayoutPart(of: "мир,ghbdtn", from: .english, to: .russian, activeLayouts: layouts)
+        XCTAssertEqual(afterRussian, "мир,привет")
+        let oneAlphabet = await engine.convertWrongLayoutPart(of: "ghbdtn", from: .english, to: .russian, activeLayouts: layouts)
+        XCTAssertNil(oneAlphabet)
+    }
 }
