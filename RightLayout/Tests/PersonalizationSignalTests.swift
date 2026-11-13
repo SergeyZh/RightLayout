@@ -202,10 +202,18 @@ final class PersonalizationSignalTests: XCTestCase {
     }
 
     func testLayoutSwitchDetection() async throws {
-        // 1. Trigger correction
+        // Simulate returning to the machine's current layout after a correction into
+        // another language. A notification for the correction's target layout is not
+        // negative feedback, so hard-coding Russian failed on a Russian-layout Mac.
+        // autoSwitchLayout is off: the test never changes the user's input source.
+        let currentLanguage = InputSourceManager.shared.currentLanguage()
+        let (typed, corrected) = currentLanguage == .russian
+            ? ("руддщ ", "hello ")
+            : ("ghbdtn ", "привет ")
         mockTime.currentTime = Date()
-        await typeString("ghbdtn ") 
+        await typeString(typed)
         try await Task.sleep(nanoseconds: 1_000_000_000)
+        XCTAssertEqual(monitor.lastReplacement?.insertedText, corrected)
         
         // 2. Post layout change notification
         mockTime.advance(by: 0.5) // Within window

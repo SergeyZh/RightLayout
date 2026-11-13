@@ -150,6 +150,12 @@ final class AutoCorrectionSwitchTests: XCTestCase {
 
         try await doubleTapTrigger()
 
+        // The trigger starts an asynchronous correction. On a busy Mac it can finish
+        // after the helper's fixed delay; wait for its result with a bounded timeout.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while inserted == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
         XCTAssertEqual(inserted, "привет")
     }
 
