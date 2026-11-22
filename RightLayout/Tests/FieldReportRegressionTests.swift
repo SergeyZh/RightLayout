@@ -112,6 +112,20 @@ final class FieldReportRegressionTests: XCTestCase {
         }
     }
 
+    // MARK: "Yf;fkb" became "Yf;али" in Telegram
+
+    func testWordWithPunctuationKeysMissingFromTheListsIsConvertedWhole() async {
+        // "нажали" is not in the frequency list, while "али" is: the split, which left
+        // "Yf" as typed, outscored the whole word.
+        await MainActor.run { SettingsManager.shared.customEnabledLanguages = [.english, .russian] }
+        let planned = await engine.planCorrection("Yf;fkb", editingEnvironment: .accessibility)
+        guard case .autoReplace(let candidate) = planned.plan else {
+            XCTFail("Yf;fkb: expected an automatic correction, got \(planned.plan)")
+            return
+        }
+        XCTAssertEqual(candidate.replacement, "Нажали")
+    }
+
     // MARK: "Tcnm-kb" and "Vjue-kb" were only converted by the hotkey in the Claude app
 
     func testHyphenatedWordIsCorrectedWhereTextCannotBeReadBack() async {
