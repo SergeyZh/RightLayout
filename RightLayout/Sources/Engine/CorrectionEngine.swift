@@ -245,6 +245,8 @@ package actor CorrectionEngine {
         let from: Language?
         let to: Language?
         let score: Double
+        /// A split that left a piece as typed although it is no word ("Yf" in "Yf;али").
+        var keepsGibberish = false
     }
 
     struct CompoundPart: Sendable {

@@ -146,6 +146,7 @@ extension CorrectionEngine {
         result.reserveCapacity(token.count)
 
         var hypCounts: [LanguageHypothesis: Int] = [:]
+        var keepsGibberish = false
 
         for part in parts {
             guard part.isWord else {
@@ -163,6 +164,7 @@ extension CorrectionEngine {
                 hypCounts[decision.layoutHypothesis, default: 0] += 1
             } else {
                 result.append(part.text)
+                if bestWordScore(part.text) == 0 { keepsGibberish = true }
             }
         }
 
@@ -174,7 +176,8 @@ extension CorrectionEngine {
             hypothesis: dominantHypothesis,
             from: langPair?.source,
             to: langPair?.target,
-            score: fastTextScore(result)
+            score: fastTextScore(result),
+            keepsGibberish: keepsGibberish
         )
     }
 
@@ -211,7 +214,9 @@ extension CorrectionEngine {
 
     /// Whether punctuation the split candidate keeps inside the word is really a letter
     /// key typed in the wrong layout: a lone letter next to it can't be a word of its own
-    /// ("J,yjdb" is "Обнови", not "J,нови"), and the whole conversion turns it into a letter.
+    /// ("J,yjdb" is "Обнови", not "J,нови"), nor can a piece the split leaves as typed
+    /// although it is no word ("Yf;fkb" is "Нажали", not "Yf;али"), and the whole
+    /// conversion turns it into a letter.
     func isPunctuationKeyALetter(
         original: String,
         split: SmartCorrection,
@@ -226,6 +231,7 @@ extension CorrectionEngine {
 
         let parts = splitWordRunsAndDelimiters(original)
         guard parts.count >= 3 else { return false }
+        if split.hypothesis != nil, split.keepsGibberish { return true }
 
         for i in 1..<(parts.count - 1) {
             guard !parts[i].isWord, parts[i - 1].isWord, parts[i + 1].isWord else { continue }
