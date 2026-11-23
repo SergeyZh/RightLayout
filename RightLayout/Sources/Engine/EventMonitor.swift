@@ -1930,7 +1930,9 @@ public final class EventMonitor {
     /// Whether a failed verification since `sessionEpoch` gave the session the field's
     /// word to convert instead.
     private func reseededSince(_ sessionEpoch: UInt64) -> HotkeyWordOutcome {
-        inputSession.sessionEpoch != sessionEpoch && !inputSession.typedToken.isEmpty ? .reseeded : .done
+        inputSession.sessionEpoch != sessionEpoch && (!inputSession.typedToken.isEmpty || lastCommittedToken != nil)
+            ? .reseeded
+            : .done
     }
 
     /// Verifies `token` + `separator` before the caret for a hotkey correction.
@@ -2232,10 +2234,16 @@ public final class EventMonitor {
             }
             if let snapshot, let seed {
                 applySeed(seed, snapshot: snapshot, bumpSessionEpoch: true)
+                // No word being typed at the caret: the field's word before it, with the
+                // space after it, is the last one committed. The hotkey converts that.
+                lastCommittedToken = seed.typedToken.isEmpty
+                    ? FocusedTextContextService.committedWordBeforeCaret(in: snapshot)
+                        .map { CommittedTokenContext(token: $0.token, separator: $0.separator) }
+                    : nil
             } else {
                 resetSession(reason: "Verification Mismatch", clearPhraseContext: false)
+                lastCommittedToken = nil
             }
-            lastCommittedToken = nil
             clearTransliterationHint()
             // Before anything converts the field's word: a reset arriving later would
             // drop the conversion's alternatives.

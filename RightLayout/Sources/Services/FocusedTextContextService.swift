@@ -496,7 +496,48 @@ package final class FocusedTextContextService {
             }
             return end
         }
+        return caretBehindTypedEnd(in: text, caret: caret, typedTail: comparable(typedTail))
+    }
+
+    /// The session can be wrong about the text further back and still right about the
+    /// last keystrokes: bb, read before it showed a line break, gave "этапе." and "Lkz" as
+    /// one word, and its caret, one character behind the space typed after "Lkz", then
+    /// hid itself from the check above. When the word before the reported caret and what
+    /// follows it, up to the end of a word at most `maxCaretLag` characters on, is the end
+    /// of `typedTail`, the caret is really there. Converting the word at the reported
+    /// caret erased from the real one and left a letter ("LДля").
+    nonisolated private static func caretBehindTypedEnd(in text: NSString, caret: Int, typedTail: String) -> Int? {
+        var wordStart = caret
+        while wordStart > 0, !isWhitespaceOrNewline(at: wordStart - 1, in: text) {
+            wordStart -= 1
+        }
+        for end in (caret + 1)...min(text.length, caret + maxCaretLag) {
+            let shown = text.substring(with: NSRange(location: wordStart, length: end - wordStart))
+            guard end == text.length || !isLetterOrDigit(at: end, in: text),
+                  shown.contains(where: { $0.isLetter || $0.isNumber }),
+                  typedTail.hasSuffix(shown) else {
+                continue
+            }
+            return end
+        }
         return nil
+    }
+
+    /// The word right before the caret and the spaces after it, when the caret follows a
+    /// word and a space or two: the word the session last committed, as the field shows it.
+    nonisolated package static func committedWordBeforeCaret(in snapshot: FocusedTextSnapshot) -> (token: String, separator: String)? {
+        guard snapshot.selectedRange.length == 0 else { return nil }
+        let beforeCaret = prefix(in: snapshot.fullText, utf16Length: snapshot.selectedRange.location)
+        let separator = String(beforeCaret.reversed().prefix(while: { $0 == " " || $0 == "\u{00A0}" }).reversed())
+        guard !separator.isEmpty else { return nil }
+        let token = trailingToken(in: String(beforeCaret.dropLast(separator.count)))
+        guard !token.isEmpty else { return nil }
+        return (token, separator)
+    }
+
+    nonisolated private static func isWhitespaceOrNewline(at location: Int, in text: NSString) -> Bool {
+        text.substring(with: text.rangeOfComposedCharacterSequence(at: location))
+            .allSatisfy { $0.isWhitespace || $0.isNewline }
     }
 
     /// Whether the field shows the end of `typedTail`, text the user has just typed,
