@@ -230,6 +230,8 @@ public final class EventMonitor {
     package var typedTokenForTesting: String { inputSession.typedToken }
     /// The words before it (for tests).
     package var phraseContextForTesting: String { inputSession.phraseContext }
+    /// What the session takes as just typed before the caret (for tests).
+    package var locallyTypedTailForTesting: String? { locallyTypedTail() }
     /// The app being typed in, as if it had just been activated (for tests).
     package var activeAppForTesting: String {
         get { lastActiveApp }
@@ -972,6 +974,14 @@ public final class EventMonitor {
             passNextEnter = true
         } else {
             postHeldEnter(held, proxy: nil)
+            // The posted Enter doesn't come back through the tap: note it after the word,
+            // as an Enter let straight through is. Without it, bb, read back before it
+            // showed the new line, gave the word before the Enter as the one being typed,
+            // and the next one was glued to it ("этапе." + "Lkz"); the hotkey then took
+            // "Lkz" from a stale caret and left the "L" ("этапе.\nLДля").
+            if let last = lastCommittedToken {
+                lastCommittedToken = CommittedTokenContext(token: last.token, separator: last.separator + "\r")
+            }
         }
     }
 

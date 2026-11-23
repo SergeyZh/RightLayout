@@ -256,6 +256,17 @@ final class LaggingHostRegressionTests: XCTestCase {
         XCTAssertNil(FocusedTextContextService.seedSession(from: snapshot("Hello Anya, You can"), typedTail: "can "))
     }
 
+    func testSeedingWaitsForAFieldThatDoesNotShowTheEnterYet() {
+        // From a bb report: read before it showed the new line, "этапе." was taken as the
+        // word being typed, and "Lkz" on the next line was glued to it.
+        let text = "Выброси из требований необходимость работы MicroSD и firewall на первом этапе."
+        XCTAssertNil(FocusedTextContextService.seedSession(from: snapshot(text), typedTail: "этапе.\r"))
+        XCTAssertEqual(
+            FocusedTextContextService.seedSession(from: snapshot(text + "\n"), typedTail: "этапе.\r")?.typedToken,
+            ""
+        )
+    }
+
     func testSeedingFromALaggingCaretStartsANewWord() {
         let text = "Hello Anya, You can "
         let seed = FocusedTextContextService.seedSession(from: snapshot(text, caret: length(text) - 1), typedTail: "can ")
