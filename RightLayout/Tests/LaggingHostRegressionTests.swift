@@ -241,6 +241,96 @@ final class LaggingHostRegressionTests: XCTestCase {
         }
     }
 
+    // MARK: The session's text differs from the field's, and the caret lags
+
+    // From a bb report: the session missed a line break and took "этапе." and "Lkz" as one
+    // word; bb showed "этапе.\nLkz " with its caret before the space. The hotkey took
+    // "Lkz" from that caret and erased from the real one: "этапе.\nLДля".
+
+    private let missedLineBreak = "на первом этапе.\nLkz "
+
+    func testCaretBehindTheEndOfWhatWasTypedIsAtTheEnd() {
+        let end = length(missedLineBreak)
+        XCTAssertEqual(
+            FocusedTextContextService.laggingCaretLocation(
+                fullText: missedLineBreak,
+                selection: NSRange(location: end - 1, length: 0),
+                typedTail: "этапе.Lkz "
+            ),
+            end
+        )
+    }
+
+    func testMismatchBehindTheEndOfWhatWasTypedTakesTheWordAtTheRealCaret() {
+        let end = length(missedLineBreak)
+        guard case .mismatch(let snapshot?, let seed?) = FocusedTextContextService.verifyExpectedSuffix(
+            "этапе.Lkz ",
+            in: snapshot(missedLineBreak, caret: end - 1)
+        ) else {
+            return XCTFail("The field doesn't show \"этапе.Lkz \"")
+        }
+        XCTAssertEqual(seed.typedToken, "", "Not \"Lkz\" at the stale caret")
+        XCTAssertEqual(snapshot.selectedRange.location, end)
+        let committed = FocusedTextContextService.committedWordBeforeCaret(in: snapshot)
+        XCTAssertEqual(committed?.token, "Lkz")
+        XCTAssertEqual(committed?.separator, " ")
+    }
+
+    func testFieldsWordIsRetypedWithItsSpace() {
+        // What the hotkey then converts: "Lkz" before the stale caret, and the space,
+        // which the field shows after it, is erased and typed again.
+        let end = length(missedLineBreak)
+        let caret = NSRange(location: end - 1, length: 0)
+        guard case .verified(let context) = FocusedTextContextService.verifyCommittedBoundary(
+            token: "Lkz",
+            separator: " ",
+            in: snapshot(missedLineBreak, caret: caret.location)
+        ) else {
+            return XCTFail("\"Lkz\" is before the caret")
+        }
+        let plan = SelectionReplacementService.verifiedReplayPlan(
+            fullText: missedLineBreak,
+            selection: SelectionReplacementService.replaySelection(
+                fullText: missedLineBreak,
+                selection: caret,
+                verifiedRange: context.verifiedRange,
+                expectedOriginal: context.verifiedText
+            ),
+            verifiedRange: context.verifiedRange,
+            expectedOriginal: context.verifiedText,
+            unverifiedSuffix: " "
+        )
+        XCTAssertEqual(plan?.deleteCount, 4, "\"Lkz \", not \"kz \"")
+        XCTAssertEqual(plan?.tail, " ")
+    }
+
+    func testTextAfterTheCaretThatGoesOnIsNotTheEndOfWhatWasTyped() {
+        let text = "на первом этапе.\nLkz abc"
+        XCTAssertNil(
+            FocusedTextContextService.laggingCaretLocation(
+                fullText: text,
+                selection: NSRange(location: length("на первом этапе.\nLkz"), length: 0),
+                typedTail: "этапе.Lkz "
+            ),
+            "\"Lkz \" is followed by more of the word \"abc\""
+        )
+        XCTAssertNil(
+            FocusedTextContextService.laggingCaretLocation(
+                fullText: "на первом этапе.\nLkz Lkz",
+                selection: NSRange(location: length("на первом этапе.\nLkz"), length: 0),
+                typedTail: "этапе.Lkz "
+            ),
+            "\" Lkz\" after the caret is not what was typed last"
+        )
+    }
+
+    func testFieldsWordAndSpaceBeforeTheCaret() {
+        XCTAssertEqual(FocusedTextContextService.committedWordBeforeCaret(in: snapshot("one two  "))?.token, "two")
+        XCTAssertEqual(FocusedTextContextService.committedWordBeforeCaret(in: snapshot("one two  "))?.separator, "  ")
+        XCTAssertNil(FocusedTextContextService.committedWordBeforeCaret(in: snapshot("one two")))
+        XCTAssertNil(FocusedTextContextService.committedWordBeforeCaret(in: snapshot("one two\n")))
+    }
+
     // MARK: Text before the caret behind the keystrokes
 
     func testFieldThatDoesNotShowTheSeparatorYetLagsBehind() {
@@ -354,9 +444,12 @@ final class LaggingHostRegressionTests: XCTestCase {
             ("Codex, чтобы ,skb dblys yjdst ", "dblysyjdst "),
             ("провайдере Codex, ", "Codex "),
         ] {
-            XCTAssertNil(
-                FocusedTextContextService.seedSession(from: snapshot(text, caret: length(text) - 1), typedTail: typedTail),
-                "\(typedTail): the field hasn't shown the space yet"
+            // Either wait for the field, or take it at the real caret, after the space.
+            XCTAssertEqual(
+                FocusedTextContextService.seedSession(from: snapshot(text, caret: length(text) - 1), typedTail: typedTail)?
+                    .typedToken ?? "",
+                "",
+                "\(typedTail): the caret is behind the space"
             )
         }
     }
