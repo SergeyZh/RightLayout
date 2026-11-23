@@ -76,8 +76,11 @@ extension CorrectionEngine {
             let hyp = hypothesisFor(source: from, target: to)
             let variants = LayoutMapper.shared.convertAllVariants(text, from: from, to: to, activeLayouts: activeLayouts)
 
+            // A conversion that changes only punctuation is no other way the word was typed:
+            // ",the" (typed "беру") through the Russian layout is "?the".
+            let letters = text.filter(\.isLetter)
             guard let converted = variants.lazy.map(\.result).first(where: { candidate in
-                candidate != text && seen.insert(candidate).inserted
+                candidate != text && candidate.filter(\.isLetter) != letters && seen.insert(candidate).inserted
             }) else {
                 continue
             }

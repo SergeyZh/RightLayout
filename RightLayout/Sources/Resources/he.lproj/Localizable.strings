@@ -519,7 +519,7 @@
 "How much better than the word as typed a conversion of up to three letters must score." = "בכמה המרה של עד שלוש אותיות צריכה לקבל ציון טוב יותר מהמילה כפי שהוקלדה.";
 "The same for longer words." = "אותו דבר למילים ארוכות יותר.";
 "How sure the knowledge sources must be that the conversion is a word." = "כמה מקורות הידע צריכים להיות בטוחים שההמרה היא מילה.";
-"A scored correction this confident replaces the router's \"typed correctly\"." = "תיקון לפי ציון בביטחון כזה מחליף את \"הוקלד נכון\" של הנתב.";
+"A scored correction this confident replaces the router's \"typed correctly\", except for a known Russian word." = "תיקון לפי ציון בביטחון כזה מחליף את \"הוקלד נכון\" של הנתב, מלבד מילה רוסית מוכרת.";
 "Below this the model's proposal of another layout is ignored." = "מתחת לזה הצעת המודל לפריסה אחרת מתעלמים ממנה.";
 "How much better another conversion must score to replace the model's choice." = "בכמה המרה אחרת צריכה להיות טובה יותר כדי להחליף את בחירת המודל.";
 "The model's \"typed correctly\" replaces the baseline when it is surer than this and than the baseline." = "\"הוקלד נכון\" של המודל מחליף את תשובת הבסיס כשהוא בטוח יותר מהסף הזה ומתשובת הבסיס.";

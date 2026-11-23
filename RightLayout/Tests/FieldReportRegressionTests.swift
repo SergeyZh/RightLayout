@@ -473,4 +473,31 @@ final class FieldReportRegressionTests: XCTestCase {
             }
         }
     }
+
+    // MARK: "беру" became ",the": "б" is the "," key on the English layout
+
+    private func useReportersLayouts() async {
+        await MainActor.run {
+            SettingsManager.shared.customEnabledLanguages = [.english, .russian]
+            SettingsManager.shared.activeLayouts = ["en": "abc", "ru": "russianwin"]
+        }
+    }
+
+    func testRussianWordStartingWithBIsLeftAlone() async {
+        await useReportersLayouts()
+        for word in ["беру", "берут", "бери", "бег"] {
+            for environment in [EditingEnvironment.accessibility, .nonAccessibility] {
+                let planned = await engine.planCorrection(word, editingEnvironment: environment)
+                if case .autoReplace(let candidate) = planned.plan {
+                    XCTFail("\(word) (\(environment)) was replaced with \(candidate.replacement), why \(planned.trail ?? "-")")
+                }
+            }
+        }
+    }
+
+    func testHotkeyTurnsCommaWordBackIntoTheRussianWord() async {
+        await useReportersLayouts()
+        let first = await engine.correctLastWord(",the")
+        XCTAssertEqual(first, "беру")
+    }
 }
