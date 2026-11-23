@@ -641,7 +641,7 @@
 "How much better than the word as typed a conversion of up to three letters must score." = "How much better than the word as typed a conversion of up to three letters must score.";
 "The same for longer words." = "The same for longer words.";
 "How sure the knowledge sources must be that the conversion is a word." = "How sure the knowledge sources must be that the conversion is a word.";
-"A scored correction this confident replaces the router's \"typed correctly\"." = "A scored correction this confident replaces the router's \"typed correctly\".";
+"A scored correction this confident replaces the router's \"typed correctly\", except for a known Russian word." = "A scored correction this confident replaces the router's \"typed correctly\", except for a known Russian word.";
 "Below this the model's proposal of another layout is ignored." = "Below this the model's proposal of another layout is ignored.";
 "How much better another conversion must score to replace the model's choice." = "How much better another conversion must score to replace the model's choice.";
 "The model's \"typed correctly\" replaces the baseline when it is surer than this and than the baseline." = "The model's \"typed correctly\" replaces the baseline when it is surer than this and than the baseline.";

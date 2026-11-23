@@ -105,7 +105,9 @@ actor ConfidenceRouter {
         }
 
         var kind = tokenKind(for: token)
-        let fallbackCandidate = scoredDecision(
+        // A known Russian word stays as the router's Russian word protection kept it:
+        // scored, "беру" became ",the", as "the" outscores it once the "," is dropped.
+        let fallbackCandidate = isProtectedRussianWord(token, mode: mode) ? nil : scoredDecision(
             token: token,
             activeLayouts: activeLayouts,
             mode: mode,
@@ -209,6 +211,14 @@ actor ConfidenceRouter {
     /// Other sentence punctuation ("Lf?" → "Да,") ends the sentence too, so no later
     /// word will settle it; there the bare word must be a common Russian word and not
     /// a common English one.
+    /// Whether the router's Russian word protection keeps `token` as typed.
+    private func isProtectedRussianWord(_ token: String, mode: DetectionMode) -> Bool {
+        mode == .automatic
+            && DecisionPipeline.isEnabled(.russianProtection)
+            && dominantScriptLanguage(token) == .russian
+            && wordValidator.confidence(for: token, language: .russian) >= DecisionPipeline.value(.russianProtectionMin)
+    }
+
     private func wrongLayoutPunctuationDecision(
         token: String,
         activeLayouts: [String: String],

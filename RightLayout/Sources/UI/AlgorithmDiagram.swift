@@ -594,7 +594,7 @@ extension DecisionParameter {
         case .scoredTargetWordMin:
             return "How sure the knowledge sources must be that the conversion is a word."
         case .scoredOverrideConfidence:
-            return "A scored correction this confident replaces the router's \"typed correctly\"."
+            return "A scored correction this confident replaces the router's \"typed correctly\", except for a known Russian word."
         case .coreMLMinConfidence:
             return "Below this the model's proposal of another layout is ignored."
         case .coreMLOverrideMargin:

@@ -641,7 +641,7 @@
 "How much better than the word as typed a conversion of up to three letters must score." = "Насколько конвертация длиной до трёх букв должна быть лучше слова как набрано.";
 "The same for longer words." = "То же для более длинных слов.";
 "How sure the knowledge sources must be that the conversion is a word." = "Насколько источники знаний должны быть уверены, что конвертация — слово.";
-"A scored correction this confident replaces the router's \"typed correctly\"." = "Оценочное исправление с такой уверенностью заменяет «набрано правильно» роутера.";
+"A scored correction this confident replaces the router's \"typed correctly\", except for a known Russian word." = "Оценочное исправление с такой уверенностью заменяет «набрано правильно» роутера, кроме известного русского слова.";
 "Below this the model's proposal of another layout is ignored." = "Ниже этого предложение модели о другой раскладке игнорируется.";
 "How much better another conversion must score to replace the model's choice." = "Насколько другая конвертация должна быть лучше, чтобы заменить выбор модели.";
 "The model's \"typed correctly\" replaces the baseline when it is surer than this and than the baseline." = "«Набрано правильно» от модели заменяет базовый ответ, если модель увереннее этого порога и базового ответа.";

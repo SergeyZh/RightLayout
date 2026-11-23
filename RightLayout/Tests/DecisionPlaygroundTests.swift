@@ -126,6 +126,16 @@ final class DecisionPlaygroundTests: XCTestCase {
         XCTAssertTrue(decided.contains(.russianProtection) || decided.contains(.whitelist), "\(word.events)")
     }
 
+    /// "беру" is ",the" through the English layout; the scored decision used to override
+    /// the protection with it.
+    func testAKnownRussianWordIsNotOverriddenByTheScoredDecision() async {
+        let word = await check("беру")[0]
+        XCTAssertEqual(word.outcome, .leave, "\(word.events)")
+        XCTAssertEqual(word.shown, "беру")
+        XCTAssertTrue(steps(word, .decided).contains(.russianProtection), "\(word.events)")
+        XCTAssertFalse(word.events.contains { $0.step == .scoredDecision }, "\(word.events)")
+    }
+
     func testEveryWordOfAPhraseIsChecked() async {
         let words = await check("ghbdtn rfr ltkf")
         XCTAssertEqual(words.map(\.typed), ["ghbdtn", "rfr", "ltkf"])
