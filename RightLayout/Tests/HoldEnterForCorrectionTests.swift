@@ -81,6 +81,18 @@ final class HoldEnterForCorrectionTests: XCTestCase {
         XCTAssertEqual(eventMonitor.releasedEnterCount, 1)
     }
 
+    func testReleasedEnterEndsTheWordBeforeIt() async throws {
+        // From a bb report: the Enter let through went unnoticed, and a read of the field
+        // before it showed the new line made "этапе." the start of the next word.
+        type([4, 14, 37, 37, 31]) // "hello"
+        press(36)
+
+        try await Task.sleep(nanoseconds: 600_000_000)
+
+        XCTAssertEqual(eventMonitor.releasedEnterCount, 1)
+        XCTAssertEqual(eventMonitor.locallyTypedTailForTesting, "hello\r")
+    }
+
     func testTypingAfterHeldEnterReleasesItImmediately() async throws {
         type([5, 4, 11, 2, 17, 45]) // "ghbdtn"
         press(36)
