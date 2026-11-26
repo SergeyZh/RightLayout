@@ -183,6 +183,21 @@ final class FieldReportRegressionTests: XCTestCase {
         XCTAssertNil(suggestion, "Nothing may be waiting for the hotkey")
     }
 
+    // MARK: Slack: ":-)" then "B", and the hotkey's first press did nothing
+
+    func testSuggestionIsDroppedByTheNextWord() async {
+        // ":-)" was held for the hotkey ("Ж-)"). The next word's correction didn't go
+        // through, and the hotkey applied the suggestion for ":-)" instead of converting
+        // "B"; the field didn't show what it looked for, so nothing happened.
+        let emoticon = await engine.planCorrection(":-)", phraseBuffer: "Но я не провел параллелей.")
+        guard case .hint = emoticon.plan else {
+            return XCTFail("\":-)\" is expected to wait for the hotkey, got \(emoticon.plan)")
+        }
+        _ = await engine.planCorrection("B", phraseBuffer: "Но я не провел параллелей.")
+        let suggestion = await engine.applyPendingSuggestion()
+        XCTAssertNil(suggestion, "The suggestion was for the word before")
+    }
+
     // MARK: "На всякийс лучай" became "На всякийc kexfq"
 
     func testTextStartingInsideAWordIsNotAWholeWord() {

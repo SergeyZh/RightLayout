@@ -627,14 +627,15 @@ final class SelectionReplacementService {
     /// The caret to retype from. Slack can report it a character or two behind the text
     /// it shows; deleting from there left the word's first letter ("Скуысуте|Ж" became
     /// "СCrescent"). When the verified text ends the field and the caret is inside it,
-    /// the caret is at its end.
+    /// or at its start, the caret is at its end. A one-letter word one character behind
+    /// has the caret at its start: nothing was typed ("…:-)\nB" in Slack stayed "B").
     nonisolated static func replaySelection(
         fullText: String,
         selection: NSRange,
         verifiedRange: NSRange,
         expectedOriginal: String
     ) -> NSRange {
-        guard selection.location > verifiedRange.location,
+        guard selection.location >= verifiedRange.location,
               let caret = FocusedTextContextService.laggingCaretLocation(
                   fullText: fullText,
                   selection: selection,

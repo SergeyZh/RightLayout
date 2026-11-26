@@ -526,6 +526,45 @@ final class LaggingHostRegressionTests: XCTestCase {
         XCTAssertEqual(plan?.tail, "")
     }
 
+    func testOneLetterWordIsRetypedFromACaretAtItsStart() {
+        // Slack, ":-)", Shift+Enter, "B ": the field showed "B" with the caret before it.
+        // The word was verified at the field's end, but retyping took the caret where it
+        // was reported, found it before the word and typed nothing.
+        for text in [":-)\nB", ":-)\nB "] {
+            let verifiedRange = NSRange(location: length(":-)\n"), length: 1)
+            let selection = SelectionReplacementService.replaySelection(
+                fullText: text,
+                selection: NSRange(location: verifiedRange.location, length: 0),
+                verifiedRange: verifiedRange,
+                expectedOriginal: "B"
+            )
+            XCTAssertEqual(selection, NSRange(location: NSMaxRange(verifiedRange), length: 0), text)
+            let plan = SelectionReplacementService.verifiedReplayPlan(
+                fullText: text,
+                selection: selection,
+                verifiedRange: verifiedRange,
+                expectedOriginal: "B",
+                unverifiedSuffix: " "
+            )
+            XCTAssertEqual(plan?.deleteCount, 2, "\"B \", from the real caret (\(text.debugDescription))")
+            XCTAssertEqual(plan?.tail, " ")
+        }
+    }
+
+    func testRetypingKeepsACaretBeforeALetterThatGoesOn() {
+        // "B" is the start of a longer word here, not the end of what was typed.
+        let selection = NSRange(location: 0, length: 0)
+        XCTAssertEqual(
+            SelectionReplacementService.replaySelection(
+                fullText: "Bx",
+                selection: selection,
+                verifiedRange: NSRange(location: 0, length: 1),
+                expectedOriginal: "B"
+            ),
+            selection
+        )
+    }
+
     func testRetypingKeepsACaretThatIsNotLagging() {
         let text = "abc def"
         let selection = NSRange(location: 3, length: 0)

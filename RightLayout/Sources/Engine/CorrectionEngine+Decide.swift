@@ -15,6 +15,10 @@ extension CorrectionEngine {
         latencies: [TimeInterval] = [],
         editingEnvironment: EditingEnvironment = .accessibility
     ) async -> CorrectionResult {
+        // A suggestion is for the word it was made for. Kept past the next word, the
+        // hotkey applied it instead of converting that word, and failed: Slack, ":-)"
+        // then "B", and the first press did nothing.
+        pendingSuggestion = nil
         let result = await correctTextUnrestricted(
             text,
             phraseBuffer: phraseBuffer,
