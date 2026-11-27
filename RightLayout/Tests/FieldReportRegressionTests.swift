@@ -456,6 +456,83 @@ final class FieldReportRegressionTests: XCTestCase {
         }
     }
 
+    // MARK: Slack: "\"nj ;t", "Cfvvfhb" and "Z" on a new line were left as typed
+
+    func testWordWithOneLatinLetterAndAPunctuationKeyIsCorrected() async {
+        // ";t" is "же": the single-letter safety counted only the "t", and the policy
+        // took it for a one-letter word.
+        await MainActor.run {
+            SettingsManager.shared.customEnabledLanguages = [.english, .russian]
+            SettingsManager.shared.activeLayouts = ["en": "abc", "ru": "russianwin"]
+            SettingsManager.shared.minAutoCorrectWordLength = AutoCorrectionLimits.default.minimumWordLength
+        }
+        for phrase in ["", "Это"] {
+            let planned = await engine.planCorrection(";t", phraseBuffer: phrase, editingEnvironment: .accessibility)
+            guard case .autoReplace(let candidate) = planned.plan else {
+                XCTFail("\";t\" after \"\(phrase)\": expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+                continue
+            }
+            XCTAssertEqual(candidate.replacement, "же")
+        }
+        // A lone letter is still kept.
+        let planned = await engine.planCorrection("t", phraseBuffer: "Это", editingEnvironment: .accessibility)
+        if case .autoReplace(let candidate) = planned.plan {
+            XCTFail("\"t\" was replaced with \(candidate.replacement)")
+        }
+    }
+
+    func testSummaryIsAKnownRussianWord() async {
+        await MainActor.run {
+            SettingsManager.shared.customEnabledLanguages = [.english, .russian]
+            SettingsManager.shared.activeLayouts = ["en": "abc", "ru": "russianwin"]
+        }
+        let planned = await engine.planCorrection("Cfvvfhb", editingEnvironment: .accessibility)
+        guard case .autoReplace(let candidate) = planned.plan else {
+            return XCTFail("Expected an automatic correction, got \(planned.plan), why \(planned.trail ?? "-")")
+        }
+        XCTAssertEqual(candidate.replacement, "Саммари")
+    }
+
+    func testCapitalOneLetterRussianWordStartingALine() async {
+        let saved = await MainActor.run { () -> (Int, Language) in
+            let settings = SettingsManager.shared
+            let saved = (settings.minAutoCorrectWordLength, settings.preferredLanguage)
+            settings.customEnabledLanguages = [.english, .russian]
+            settings.minAutoCorrectWordLength = AutoCorrectionLimits.default.minimumWordLength
+            settings.preferredLanguage = .english
+            return saved
+        }
+        // After a Russian line, as after a sentence.
+        var planned = await engine.planCorrection("Z", phraseBuffer: "Саммари\n", editingEnvironment: .accessibility)
+        if case .autoReplace(let candidate) = planned.plan {
+            XCTAssertEqual(candidate.replacement, "Я")
+        } else {
+            XCTFail("Z after \"Саммари\" and a line break: got \(planned.plan), why \(planned.trail ?? "-")")
+        }
+        // Inside the line the capital is meant.
+        planned = await engine.planCorrection("Z", phraseBuffer: "Саммари", editingEnvironment: .accessibility)
+        if case .autoReplace(let candidate) = planned.plan {
+            XCTFail("Z inside the line was replaced with \(candidate.replacement)")
+        }
+
+        // After any line, as at the start of the text.
+        await MainActor.run {
+            SettingsManager.shared.minAutoCorrectWordLength = 1
+            SettingsManager.shared.preferredLanguage = .russian
+        }
+        planned = await engine.planCorrection("Z", phraseBuffer: "Hello\n", editingEnvironment: .accessibility)
+        if case .autoReplace(let candidate) = planned.plan {
+            XCTAssertEqual(candidate.replacement, "Я")
+        } else {
+            XCTFail("Z after \"Hello\" and a line break: got \(planned.plan), why \(planned.trail ?? "-")")
+        }
+
+        await MainActor.run {
+            SettingsManager.shared.minAutoCorrectWordLength = saved.0
+            SettingsManager.shared.preferredLanguage = saved.1
+        }
+    }
+
     // MARK: "JetBrains" typed on the Russian layout was taken for code
 
     /// Telegram, layouts en=abc and ru=russianwin: "ОуеИкфшты" was left as typed with

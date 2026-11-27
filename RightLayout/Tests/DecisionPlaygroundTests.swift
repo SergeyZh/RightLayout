@@ -136,6 +136,14 @@ final class DecisionPlaygroundTests: XCTestCase {
         XCTAssertFalse(word.events.contains { $0.step == .scoredDecision }, "\(word.events)")
     }
 
+    /// ";t" is "же": the single-letter rule counted only the "t".
+    func testAPunctuationKeyThatIsALetterIsNotALoneLetter() async {
+        let word = await check(";t")[0]
+        XCTAssertEqual(word.outcome, .replace, "\(word.events)")
+        XCTAssertEqual(word.shown, "же")
+        XCTAssertTrue(word.events.contains { $0.step == .singleLetterSafety && $0.note == .notSingleLetter }, "\(word.events)")
+    }
+
     func testEveryWordOfAPhraseIsChecked() async {
         let words = await check("ghbdtn rfr ltkf")
         XCTAssertEqual(words.map(\.typed), ["ghbdtn", "rfr", "ltkf"])

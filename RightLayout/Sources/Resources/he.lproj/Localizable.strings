@@ -401,7 +401,7 @@
 "Emoticons typed on the Russian or Hebrew layout are fixed at once. The layout is not switched: an emoticon belongs to no language." = "סמיילים שהוקלדו בפריסה הרוסית או העברית מתוקנים מיד. הפריסה לא מוחלפת: סמייל אינו שייך לשפה.";
 "One-letter Russian words" = "מילים רוסיות בנות אות אחת";
 "\"Прочитай b\" → \"Прочитай и\"" = "\"Прочитай b\" ← \"Прочитай и\"";
-"A Latin letter that is a one-letter Russian word is fixed at once after a Russian word, or as a capital starting a sentence after one. A capital inside a sentence (\"план B\") is left alone." = "אות לטינית שהיא מילה רוסית בת אות אחת מתוקנת מיד אחרי מילה רוסית, או כאות רישית בתחילת משפט אחריה. אות רישית באמצע משפט (\"план B\") נשארת.";
+"A Latin letter that is a one-letter Russian word is fixed at once after a Russian word, or as a capital starting a sentence after one. A new line starts a sentence too: \"Z\" at its start is \"Я\". A capital inside a sentence (\"план B\") is left alone." = "אות לטינית שהיא מילה רוסית בת אות אחת מתוקנת מיד אחרי מילה רוסית, או כאות רישית בתחילת משפט אחריה. גם שורה חדשה פותחת משפט: \"Z\" בתחילתה הוא \"Я\". אות רישית באמצע משפט (\"план B\") נשארת.";
 "Code and links" = "קוד וקישורים";
 "Code, URLs and commands are left as typed" = "קוד, כתובות ופקודות נשארים כפי שהוקלדו";
 "Recognizes code, links, paths and terminal commands, and leaves them as typed. A word with slashes only at its end (\"Lf/\") is not a path. A capital inside a word marks an identifier only in Latin letters: \"ОуеИкфшты\" goes on and becomes \"JetBrains\"." = "מזהה קוד, קישורים, נתיבים ופקודות טרמינל ומשאיר אותם כפי שהוקלדו. מילה עם לוכסנים רק בסופה (\"Lf/\") אינה נתיב. אות רישית באמצע מילה מעידה על מזהה רק באותיות לטיניות: \"ОуеИкфшты\" ממשיכה הלאה והופכת ל-\"JetBrains\".";
@@ -412,7 +412,7 @@
 "The rules from the Adaptation page: a word you keep as typed is never changed automatically, a word with a preferred layout is converted to it." = "הכללים מעמוד ההתאמה: מילה שאתם משאירים כפי שהוקלדה לעולם לא משתנה אוטומטית, ומילה עם פריסה מועדפת מומרת אליה.";
 "Single letters" = "אותיות בודדות";
 "A lone letter stays as typed" = "אות בודדת נשארת כפי שהוקלדה";
-"A single Cyrillic or Hebrew letter is kept. A single Latin letter is kept unless it is a Russian preposition typed on the English layout (\"y\" → \"н\")." = "אות קירילית או עברית בודדת נשארת. אות לטינית בודדת נשארת, אלא אם היא מילת יחס רוסית שהוקלדה בפריסה האנגלית (\"y\" ← \"н\").";
+"A single Cyrillic or Hebrew letter is kept. A single Latin letter is kept unless it is a Russian preposition typed on the English layout (\"y\" → \"н\"). A punctuation key that is a Russian letter counts as one: \";t\" is \"же\", two letters." = "אות קירילית או עברית בודדת נשארת. אות לטינית בודדת נשארת, אלא אם היא מילת יחס רוסית שהוקלדה בפריסה האנגלית (\"y\" ← \"н\"). מקש פיסוק שהוא אות רוסית נספר כאות: \";t\" הוא \"же\", שתי אותיות.";
 "Mixed alphabets" = "אלפביתים מעורבים";
 "Latin and Cyrillic in one word: left as typed" = "לטינית וקירילית במילה אחת: נשאר כפי שהוקלד";
 "A word with letters of several alphabets was typed that way on purpose and is not converted." = "מילה עם אותיות מכמה אלפביתים הוקלדה כך בכוונה ואינה מומרת.";
@@ -462,7 +462,7 @@
 "Decides from the confidence, the margin over the runner-up and the kind of word whether to replace it, suggest it, or leave it to the hotkey." = "לפי הביטחון, הפער מהמקום השני וסוג המילה מחליט אם להחליף אותה, להציע אותה או להשאיר אותה למקש הקיצור.";
 "Correction policy" = "מדיניות תיקון";
 "Replace, suggest, or wait for the hotkey" = "להחליף, להציע או לחכות למקש הקיצור";
-"The thresholds below are those of the balanced style; the safe style raises them and the aggressive one lowers them. Words too long, too short or mixed are only fixed by the hotkey." = "הספים שלמטה הם של הסגנון המאוזן; הסגנון הבטוח מעלה אותם והאגרסיבי מוריד. מילים ארוכות מדי, קצרות מדי או מעורבות מתוקנות רק במקש הקיצור.";
+"The thresholds below are those of the balanced style; the safe style raises them and the aggressive one lowers them. Words too long, too short or mixed are only fixed by the hotkey. Length counts the letters of the converted word: \";t\" is \"же\", two." = "הספים שלמטה הם של הסגנון המאוזן; הסגנון הבטוח מעלה אותם והאגרסיבי מוריד. מילים ארוכות מדי, קצרות מדי או מעורבות מתוקנות רק במקש הקיצור. האורך נספר באותיות המילה המתוקנת: \";t\" הוא \"же\", שתיים.";
 "Caution where corrections get undone" = "זהירות היכן שמבטלים תיקונים";
 "Remembers, per app, kind of text and time of day, how often corrections were kept. Where they are mostly undone, corrections become suggestions, then hotkey-only. Learning never makes corrections bolder." = "זוכר, לפי יישום, סוג טקסט ושעה ביום, כמה פעמים תיקונים נשמרו. היכן שרובם מבוטלים, תיקונים הופכים להצעות ואז לזמינים רק במקש הקיצור. הלמידה לעולם לא הופכת תיקונים לנועזים יותר.";
 "After routing" = "אחרי הניתוב";

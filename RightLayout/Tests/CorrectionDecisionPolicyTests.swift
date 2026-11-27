@@ -186,6 +186,26 @@ final class CorrectionDecisionPolicyTests: XCTestCase {
         }
     }
 
+    func testKeysThatAreLettersCountInTheWord() {
+        // ";t" is "же": the semicolon is its "ж". A comma after a word and a quote before
+        // it may be its own punctuation.
+        for (original, converted, letters) in [
+            (";t", "же", 2), (",s", "бы", 2), ("Yf;fk", "Нажал", 5),
+            ("j,", "об", 1), ("\"nj", "Это", 2), ("ghbdtn", "привет", 6)
+        ] {
+            XCTAssertEqual(
+                CorrectionDecisionPolicy.wordLetterCount(original: original, converted: converted),
+                letters,
+                original
+            )
+        }
+        let evidence = makeEvidence(original: ";t", converted: "же", confidence: 0.95, margin: 0.95, tokenKind: .punctuated)
+        XCTAssertEqual(
+            CorrectionDecisionPolicy.evaluate(evidence: evidence, environment: .accessibility, preset: .balanced),
+            .autoApply
+        )
+    }
+
     func testPunctuatedTokenThatIsNotAWordStaysManualWithoutAccessibility() {
         let shortWord = makeEvidence(original: "j,", converted: "об", confidence: 0.95, margin: 0.95, tokenKind: .punctuated)
         XCTAssertNotEqual(

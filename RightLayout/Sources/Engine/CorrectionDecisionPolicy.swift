@@ -131,6 +131,32 @@ package enum CorrectionDecisionPolicy {
     /// layout: "/" is the period, "&" the question mark, "^" the colon ("Lf/" → "Да.").
     private static let wrongLayoutEdgePunctuation: Set<Character> = edgePunctuation.union(["/", "&", "^"])
 
+    /// Marks typed before a word and after it in ordinary text.
+    private static let openingPunctuation: Set<Character> = ["\"", "'", "(", "«"]
+    private static let closingPunctuation: Set<Character> = edgePunctuation.subtracting(["(", "«"])
+
+    /// The letters of the word `original` is when converted to `converted`: its own, and
+    /// the keys that are punctuation in it but letters in `converted`, unless they could
+    /// be its own punctuation, a quote before it or a comma after it. ";t" is "же", two
+    /// letters; "j," is "j" and a comma, one; "\"nj" is a quote and "nj", two.
+    package static func wordLetterCount(original: String, converted: String) -> Int {
+        let typed = original.filter(\.isLetter).count
+        let characters = Array(original)
+        let convertedCharacters = Array(converted)
+        guard characters.count == convertedCharacters.count,
+              let first = characters.firstIndex(where: \.isLetter),
+              let last = characters.lastIndex(where: \.isLetter) else {
+            return typed
+        }
+        var count = typed
+        for index in characters.indices where !characters[index].isLetter && convertedCharacters[index].isLetter {
+            if index < first, openingPunctuation.contains(characters[index]) { continue }
+            if index > last, closingPunctuation.contains(characters[index]) { continue }
+            count += 1
+        }
+        return count
+    }
+
     /// The letters of `text` without punctuation stuck to its edges ("Вщту!" → "Вщту"),
     /// or nil if anything other than letters is left.
     ///
@@ -212,7 +238,7 @@ package enum CorrectionDecisionPolicy {
             return .reject
         }
 
-        let letterCount = evidence.original.filter(\.isLetter).count
+        let letterCount = wordLetterCount(original: evidence.original, converted: evidence.convertedText)
         // A lone punctuation mark (a "." after a word or a mention) is not a word typed
         // in the wrong layout, though its key is a letter in the other one ("." is "ю").
         if evidence.original.count == 1, !evidence.original.contains(where: { $0.isLetter || $0.isNumber }) {

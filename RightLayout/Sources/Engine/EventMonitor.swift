@@ -1149,9 +1149,12 @@ public final class EventMonitor {
 
         // Decide first; the focused text is only read back when there is something to
         // replace. Most words need no correction and never touch Accessibility here.
+        // A line break after the last word starts the line anew: "Z" at the start of a
+        // line is "Я", not a capital letter inside a sentence ("план B").
+        let startsLine = lastCommittedToken?.separator.contains(where: \.isNewline) == true
         var planned = await engine.planCorrection(
             token,
-            phraseBuffer: inputSession.phraseContext,
+            phraseBuffer: inputSession.phraseContext + (startsLine ? "\n" : ""),
             expectedLayout: currentLanguage,
             latencies: latencies,
             editingEnvironment: editingEnvironment

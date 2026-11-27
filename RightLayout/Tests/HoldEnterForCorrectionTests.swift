@@ -93,6 +93,38 @@ final class HoldEnterForCorrectionTests: XCTestCase {
         XCTAssertEqual(eventMonitor.locallyTypedTailForTesting, "hello\r")
     }
 
+    func testWordAfterALineBreakStartsTheLine() async throws {
+        // Slack: "Cfvvfhb   ", Shift+Enter, "Z ": the phrase kept only words, so "Z" was a
+        // capital inside a sentence ("план B") and stayed. (Inside the line it still is:
+        // FieldReportRegressionTests.testCapitalOneLetterRussianWordStartingALine.)
+        let saved = (settings.minAutoCorrectWordLength, settings.preferredLanguage, settings.customEnabledLanguages)
+        settings.minAutoCorrectWordLength = 1
+        settings.preferredLanguage = .russian
+        settings.customEnabledLanguages = [.english, .russian]
+        defer {
+            settings.minAutoCorrectWordLength = saved.0
+            settings.preferredLanguage = saved.1
+            settings.customEnabledLanguages = saved.2
+        }
+        let encoder = MockCharacterEncoder()
+        encoder.mapping[14] = "e"
+        encoder.mapping[37] = "l"
+        encoder.mapping[31] = "o"
+        encoder.mapping[36] = "\r"
+        encoder.mapping[6] = "Z"
+        eventMonitor = EventMonitor(engine: engine, timeProvider: mockTime, charEncoder: encoder)
+        eventMonitor.skipPIDCheck = true
+        eventMonitor.skipSecureInputCheck = true
+        eventMonitor.skipEventPosting = true
+
+        type([4, 14, 37, 37, 31, 49]) // "hello "
+        try await Task.sleep(nanoseconds: 400_000_000)
+        press(36) // the line break
+        type([6, 49]) // "Z "
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(eventMonitor.lastReplacement?.insertedText, "Я ")
+    }
+
     func testTypingAfterHeldEnterReleasesItImmediately() async throws {
         type([5, 4, 11, 2, 17, 45]) // "ghbdtn"
         press(36)

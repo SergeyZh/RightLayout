@@ -218,7 +218,11 @@ extension CorrectionEngine {
             riskPolicy = learned
         }
 
-        if text.filter(\.isLetter).count < max(1, limits.minimumWordLength) {
+        // Counted in the word it becomes: ";t" is "же", two letters.
+        let wordLetters = evidence.isCorrection
+            ? CorrectionDecisionPolicy.wordLetterCount(original: text, converted: evidence.convertedText)
+            : text.filter(\.isLetter).count
+        if wordLetters < max(1, limits.minimumWordLength) {
             DecisionTrail.note("below_min_length")
             DecisionProbe.record(.policy, .contributed, .shorterThanMinimum, [String(max(1, limits.minimumWordLength))])
             riskPolicy = moreConservativeRiskPolicy(riskPolicy, .holdForHotkey)
@@ -1211,7 +1215,8 @@ extension CorrectionEngine {
     ///   was switched for an "@" and not back);
     /// - capital, starting a sentence after a Russian one: "Привет. Z" is "Привет. Я";
     /// - capital, starting the text, when Russian is the preferred language and the
-    ///   minimum word length is one letter: "Z" is "Я", "E" is "У".
+    ///   minimum word length is one letter: "Z" is "Я", "E" is "У". A line break counts
+    ///   as both: after it "Z" starts a sentence, and the line before it doesn't matter.
     ///
     /// No English word is a single "b", "z" or "e", so it is corrected now, and the layout
     /// switched before the next word, rather than left for the next word to confirm. A
@@ -1237,10 +1242,13 @@ extension CorrectionEngine {
               enabled.contains(.russian), enabled.contains(.english) else {
             return nil
         }
+        // A line break after the last word (the monitor adds it) starts the line anew.
+        let startsLine = phraseBuffer.last?.isNewline == true
         if letter.isLowercase {
             guard followsRussianWord else { return nil }
-        } else if let previous {
-            guard followsRussianWord, previous.last.map(Self.sentenceEndings.contains) == true else { return nil }
+        } else if let previous, !(startsLine && !followsRussianWord) {
+            let endsSentence = startsLine || previous.last.map(Self.sentenceEndings.contains) == true
+            guard followsRussianWord, endsSentence else { return nil }
         } else {
             let preferred = await settings.preferredLanguage
             guard preferred == .russian, limits.minimumWordLength <= 1 else { return nil }
