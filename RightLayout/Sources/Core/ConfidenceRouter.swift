@@ -405,7 +405,15 @@ actor ConfidenceRouter {
             //    Exception: Manual mode (hotkey) can override this.
             //    Exception (Ticket 59): Known prepositions (y -> н) are allowed if active layout checks pass.
             if mode == .automatic, DecisionPipeline.isEnabled(.singleLetterSafety) {
-                let letterCount = latin + cyr + heb
+                var letterCount = latin + cyr + heb
+                // Keys that type punctuation in English are letters in Russian: ";t" is
+                // "же", two letters, not the single letter "t".
+                if letterCount == 1, latin == 1, token.count > 1 {
+                    let activeLayouts = await settings.activeLayouts
+                    if let converted = LayoutMapper.shared.convertBest(token, from: .english, to: .russian, activeLayouts: activeLayouts) {
+                        letterCount = CorrectionDecisionPolicy.wordLetterCount(original: token, converted: converted)
+                    }
+                }
                 if letterCount == 1 {
                     // Determine which script the single letter belongs to
                     let lang: Language = (cyr > 0) ? .russian : ((heb > 0) ? .hebrew : .english)
@@ -1424,6 +1432,12 @@ actor ConfidenceRouter {
         return changed ? String(result) : nil
     }
 
+    /// Whether a key that types punctuation in `token` is a letter in `converted`.
+    private static func typesLettersWithPunctuationKeys(_ token: String, as converted: String) -> Bool {
+        guard token.count == converted.count else { return false }
+        return zip(token, converted).contains { !$0.isLetter && !$0.isWhitespace && $1.isLetter }
+    }
+
     private func scoredDecision(
         token: String,
         activeLayouts: [String: String],
@@ -1493,8 +1507,9 @@ actor ConfidenceRouter {
                 let qRaw = qualityScore(converted, lang: target) - correctionBias + correctionPriorBonus(for: hyp)
                 var q = qRaw
 
-                // This handles cases like "hf,jnftn" -> "работает" where comma maps to 'б' or 'ю'.
-                if target == .russian && (token.contains(",") || token.contains(".")) {
+                // This handles cases like "hf,jnftn" -> "работает" where comma maps to 'б' or 'ю',
+                // and ";t" -> "же", where the semicolon is 'ж' (also '[', ']', '\'', '`').
+                if target == .russian && (token.contains(",") || token.contains(".") || Self.typesLettersWithPunctuationKeys(token, as: converted)) {
                     if targetWord >= thresholds.targetWordMin || targetFreq >= 0.1 {
                         q += russianPunctBoost
                     }

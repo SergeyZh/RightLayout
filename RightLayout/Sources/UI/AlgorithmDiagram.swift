@@ -163,7 +163,7 @@ enum AlgorithmDiagram {
                     id: "singleRussianLetter",
                     title: "One-letter Russian words",
                     summary: "\"Прочитай b\" → \"Прочитай и\"",
-                    detail: "A Latin letter that is a one-letter Russian word is fixed at once after a Russian word, or as a capital starting a sentence after one. A capital inside a sentence (\"план B\") is left alone.",
+                    detail: "A Latin letter that is a one-letter Russian word is fixed at once after a Russian word, or as a capital starting a sentence after one. A new line starts a sentence too: \"Z\" at its start is \"Я\". A capital inside a sentence (\"план B\") is left alone.",
                     systemImage: "character",
                     toggle: .component(.singleRussianLetter),
                     decidesAlone: true
@@ -197,7 +197,7 @@ enum AlgorithmDiagram {
                     id: "singleLetterSafety",
                     title: "Single letters",
                     summary: "A lone letter stays as typed",
-                    detail: "A single Cyrillic or Hebrew letter is kept. A single Latin letter is kept unless it is a Russian preposition typed on the English layout (\"y\" → \"н\").",
+                    detail: "A single Cyrillic or Hebrew letter is kept. A single Latin letter is kept unless it is a Russian preposition typed on the English layout (\"y\" → \"н\"). A punctuation key that is a Russian letter counts as one: \";t\" is \"же\", two letters.",
                     systemImage: "1.circle",
                     toggle: .component(.singleLetterSafety),
                     decidesAlone: true
@@ -359,7 +359,7 @@ enum AlgorithmDiagram {
                     id: "policy",
                     title: "Correction policy",
                     summary: "Replace, suggest, or wait for the hotkey",
-                    detail: "The thresholds below are those of the balanced style; the safe style raises them and the aggressive one lowers them. Words too long, too short or mixed are only fixed by the hotkey.",
+                    detail: "The thresholds below are those of the balanced style; the safe style raises them and the aggressive one lowers them. Words too long, too short or mixed are only fixed by the hotkey. Length counts the letters of the converted word: \";t\" is \"же\", two.",
                     systemImage: "slider.horizontal.3",
                     toggle: .alwaysOn,
                     controls: [
